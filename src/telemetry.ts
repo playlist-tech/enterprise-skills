@@ -86,6 +86,15 @@ type TelemetryData =
   | SyncTelemetryData;
 
 let cliVersion: string | null = null;
+let detectedAgentName: string | null = null;
+
+/**
+ * Set the detected AI agent name for telemetry tracking.
+ * Called once during agent detection, then included in all telemetry events.
+ */
+export function setDetectedAgent(agentName: string | null): void {
+  detectedAgentName = agentName;
+}
 
 function isCI(): boolean {
   return !!(
@@ -170,6 +179,11 @@ export function track(data: TelemetryData): void {
     // Add CI flag if running in CI
     if (isCI()) {
       params.set('ci', '1');
+    }
+
+    // Add detected AI agent name
+    if (detectedAgentName) {
+      params.set('agent', detectedAgentName);
     }
 
     // Add event data
