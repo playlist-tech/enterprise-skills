@@ -23,6 +23,28 @@ Never publish a version that doesn't include the `-enterprise.<n>` prerelease su
 
 The only things that should be cherry-picked from `enterprise` to `main` are workflow files (`.github/workflows/`), since GitHub requires them on the default branch to trigger on tag pushes. Everything else stays on `enterprise`.
 
+## Feature development
+
+Most features should be upstreamable to [vercel-labs/skills](https://github.com/vercel-labs/skills). The default workflow:
+
+1. **Branch off `main`** — keeps the feature branch free of enterprise-specific code
+2. **Open two PRs simultaneously**:
+   - One to `vercel-labs/skills` (upstream contribution)
+   - One to `enterprise` (for immediate use in the fork)
+3. **Merge into `enterprise`** without waiting for upstream to accept
+4. **Tag and release** as normal
+5. **When upstream merges**: the feature comes back naturally on the next upstream sync — no duplicate work needed
+
+**Keep feature branches free of these enterprise-specific files** so the upstream PR stays clean:
+- `package.json` (name, version, description, bin, repository, homepage, bugs, author, keywords)
+- `README.md`
+- `AGENTS.md`
+- `PUBLISHING.md`
+- `.npmrc`
+- `.github/CODEOWNERS`
+- `.github/workflows/publish-enterprise.yml`
+- `.github/workflows/publish.yml` (the `if: false` change)
+
 ## Prerequisites
 
 - Node >= 18, pnpm installed
