@@ -4,6 +4,7 @@ import { sanitizeMetadata } from './sanitize.ts';
 import { track } from './telemetry.ts';
 import { isRepoPrivate } from './source-parser.ts';
 import { isRunningInAgent } from './detect-agent.ts';
+import { envConfig, buildSkillUrl, installCmd } from './env-config.ts';
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
@@ -272,9 +273,11 @@ async function isRepoPublic(owner: string, repo: string): Promise<boolean> {
 export async function runFind(args: string[]): Promise<void> {
   const query = args.join(' ');
   const isNonInteractive = !process.stdin.isTTY;
+  const cli = envConfig.cliName;
+  const cmd = installCmd();
   const agentTip = `${DIM}Tip: if running in a coding agent, follow these steps:${RESET}
-${DIM}  1) npx skills find [query]${RESET}
-${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
+${DIM}  1) ${cli} find [query]${RESET}
+${DIM}  2) ${cmd} <owner/repo@skill>${RESET}`;
 
   // Non-interactive mode: just print results and exit
   if (query) {
@@ -292,7 +295,7 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
       return;
     }
 
-    console.log(`${DIM}Install with${RESET} npx skills add <owner/repo@skill>`);
+    console.log(`${DIM}Install with${RESET} ${cmd} <owner/repo@skill>`);
     console.log();
 
     for (const skill of results.slice(0, 6)) {
@@ -301,7 +304,7 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
       console.log(
         `${TEXT}${pkg}@${skill.name}${RESET}${installs ? ` ${CYAN}${installs}${RESET}` : ''}`
       );
-      console.log(`${DIM}└ https://skills.sh/${skill.slug}${RESET}`);
+      console.log(`${DIM}└ ${buildSkillUrl(skill.slug)}${RESET}`);
       console.log();
     }
     return;
@@ -311,7 +314,7 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
   if (isNonInteractive || (await isRunningInAgent())) {
     console.log(agentTip);
     console.log();
-    console.log(`${DIM}Usage: npx skills find <query>${RESET}`);
+    console.log(`${DIM}Usage: ${envConfig.cliName} find <query>${RESET}`);
     return;
   }
 
@@ -347,11 +350,9 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
 
   const info = getOwnerRepoFromString(pkg);
   if (info && (await isRepoPublic(info.owner, info.repo))) {
-    console.log(
-      `${DIM}View the skill at${RESET} ${TEXT}https://skills.sh/${selected.slug}${RESET}`
-    );
+    console.log(`${DIM}View the skill at${RESET} ${TEXT}${buildSkillUrl(selected.slug)}${RESET}`);
   } else {
-    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}https://skills.sh${RESET}`);
+    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}${envConfig.urlBase}${RESET}`);
   }
 
   console.log();
