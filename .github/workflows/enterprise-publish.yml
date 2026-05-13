@@ -40,8 +40,8 @@ jobs:
         run: npm publish --provenance --access public --tag enterprise
 
       - name: Tag as latest
-        if: steps.publish.outcome == 'success'
-        run: npm dist-tag add @playlist-tech/enterprise-skills@$(node -p "require('./package.json').version") latest
+        if: steps.publish.outcome == 'success' || steps.publish.outcome == 'failure'
+        run: npm dist-tag add @playlist-tech/enterprise-skills@$(node -p "require('./package.json').version") latest || true
 
       - name: Create GitHub Release
         if: steps.publish.outcome == 'success'
