@@ -32,7 +32,8 @@ Most features should be upstreamable to [vercel-labs/skills](https://github.com/
    - One to `vercel-labs/skills` (upstream contribution)
    - One to `enterprise` (for immediate use in the fork)
 3. **Merge into `enterprise`** without waiting for upstream to accept
-4. **Tag and release** as normal
+4. **Bump `package.json` version** on `enterprise` (e.g. `1.5.6-enterprise.0` → `1.5.6-enterprise.1`) and push
+5. **Tag and release** as normal
 5. **When upstream merges**: the feature comes back naturally on the next upstream sync — no duplicate work needed
 
 **Keep feature branches free of these enterprise-specific files** so the upstream PR stays clean:
