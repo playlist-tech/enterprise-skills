@@ -103,13 +103,13 @@ To publish a pre-release for testing before bumping the official version, use an
    git push --tags
    ```
 
-   The workflow publishes it under the `enterprise` dist-tag (same as a normal release). Install with:
+   The workflow publishes it under the `latest` dist-tag. Because the version string contains `-rc.`, consumers on a pinned version won't be affected — only those who explicitly install `@latest` will get it. Install a specific RC with:
 
    ```bash
-   npm install @playlist-tech/enterprise-skills@enterprise
+   npm install @playlist-tech/enterprise-skills@1.5.6-enterprise.1-rc.0
    ```
 
-3. When satisfied, bump `package.json` to `1.5.6-enterprise.1` and follow the normal release steps. The `enterprise` dist-tag will point to the final version after that publish.
+3. When satisfied, bump `package.json` to `1.5.6-enterprise.1` and follow the normal release steps.
 
 ## Syncing with upstream
 

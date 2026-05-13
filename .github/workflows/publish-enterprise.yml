@@ -35,11 +35,9 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Publish to npm and tag as latest
+      - name: Publish to npm
         id: publish
-        run: |
-          npm publish --provenance --access public --tag enterprise || true
-          npm dist-tag add @playlist-tech/enterprise-skills@$(node -p "require('./package.json').version") latest
+        run: npm publish --provenance --access public --tag latest
 
       - name: Create GitHub Release
         if: steps.publish.outcome == 'success'
