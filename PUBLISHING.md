@@ -14,11 +14,19 @@ Versions follow the pattern `<upstream-version>-enterprise.<n>`:
 
 Never publish a version that doesn't include the `-enterprise.<n>` prerelease suffix — that namespace belongs to upstream.
 
+## Branch strategy
+
+| Branch | Purpose |
+| --- | --- |
+| `enterprise` | All enterprise work lives here — package identity, features, docs, config |
+| `main` | Tracks upstream as closely as possible |
+
+The only things that should be cherry-picked from `enterprise` to `main` are workflow files (`.github/workflows/`), since GitHub requires them on the default branch to trigger on tag pushes. Everything else stays on `enterprise`.
+
 ## Prerequisites
 
 - Node >= 18, pnpm installed
-- Logged into npm with publish rights to `@playlist-tech`: `npm whoami`
-  - If not logged in: `npm login`
+- Push access to `jacobstringfellow/skills` with permission to create tags matching `v*-enterprise.*`
 
 ## Release steps
 
@@ -30,49 +38,55 @@ Never publish a version that doesn't include the `-enterprise.<n>` prerelease su
    pnpm install   # updates pnpm-lock.yaml with new root package version
    ```
 
-2. **Verify the build**:
+2. **Verify the build locally**:
 
    ```bash
-   pnpm type-check
    pnpm test
    pnpm build
    npm pack --dry-run   # confirm the file list looks right
    ```
 
-3. **Publish**:
+   Note: `pnpm type-check` currently fails in both this fork and upstream due to a known type error — skip it until upstream fixes it.
 
-   ```bash
-   npm publish
-   ```
-
-   `prepublishOnly` will run `pnpm build` automatically before publishing. The `.npmrc` in this repo sets `access=public` so no extra flags are needed.
-
-4. **Commit, tag, and push**:
+3. **Commit and push to `enterprise`**:
 
    ```bash
    git add package.json pnpm-lock.yaml
    git commit -m "Release 1.5.6-enterprise.1"
-   git tag v1.5.6-enterprise.1
-   git push && git push --tags
+   git push
    ```
 
-   Pushing the tag triggers the `publish-enterprise` GitHub Actions workflow, which builds and publishes to npm automatically. You do not need to run `npm publish` manually.
+4. **Tag and push to trigger the pipeline**:
 
-## Snapshot releases
+   ```bash
+   git tag v1.5.6-enterprise.1
+   git push --tags
+   ```
 
-For pre-release testing without bumping the official version:
+   Pushing a tag matching `v*-enterprise.*` triggers the `publish-enterprise` GitHub Actions workflow, which builds and publishes to npm via OIDC trusted publishing. No npm credentials are needed locally.
 
-```bash
-pnpm publish:snapshot
-```
+## Release candidates
 
-This bumps the version to a `snapshot` prerelease (e.g. `1.5.6-enterprise.0-snapshot.0`) without creating a git tag, then publishes under the `snapshot` dist-tag. Install with:
+To publish a pre-release for testing before bumping the official version, use an `rc` suffix:
 
-```bash
-npm install @playlist-tech/enterprise-skills@snapshot
-```
+1. Set the version in `package.json` to e.g. `1.5.6-enterprise.1-rc.0`
+2. Commit, push, and tag:
 
-Note: this mutates `package.json` locally — reset it with `git checkout package.json` after testing.
+   ```bash
+   git add package.json pnpm-lock.yaml
+   git commit -m "rc: 1.5.6-enterprise.1-rc.0"
+   git push
+   git tag v1.5.6-enterprise.1-rc.0
+   git push --tags
+   ```
+
+   The workflow publishes it under the `enterprise` dist-tag (same as a normal release). Install with:
+
+   ```bash
+   npm install @playlist-tech/enterprise-skills@enterprise
+   ```
+
+3. When satisfied, bump `package.json` to `1.5.6-enterprise.1` and follow the normal release steps. The `enterprise` dist-tag will point to the final version after that publish.
 
 ## Syncing with upstream
 
