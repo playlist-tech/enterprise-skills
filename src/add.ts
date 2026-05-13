@@ -12,15 +12,6 @@ import {
 } from './source-parser.ts';
 import { stripTerminalEscapes } from './sanitize.ts';
 import { searchMultiselect } from './prompts/search-multiselect.ts';
-
-// Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
-const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
-
-async function getSourceVisibility(source: string): Promise<SourceVisibility> {
-  const ownerRepo = parseOwnerRepo(source);
-  if (!ownerRepo) return 'unknown';
-  return getRepoVisibility(ownerRepo.owner, ownerRepo.repo);
-}
 import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
 import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
 import {
@@ -67,6 +58,16 @@ import {
   type BlobInstallResult,
 } from './blob.ts';
 import packageJson from '../package.json' with { type: 'json' };
+
+// Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
+const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
+
+async function getSourceVisibility(source: string): Promise<SourceVisibility> {
+  const ownerRepo = parseOwnerRepo(source);
+  if (!ownerRepo) return 'unknown';
+  return getRepoVisibility(ownerRepo.owner, ownerRepo.repo);
+}
+
 export function initTelemetry(version: string): void {
   setVersion(version);
 }
