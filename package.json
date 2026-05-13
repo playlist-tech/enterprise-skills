@@ -1,9 +1,10 @@
 {
-  "name": "skills",
-  "version": "1.5.7",
-  "description": "The open agent skills ecosystem",
+  "name": "@playlist-tech/enterprise-skills",
+  "version": "1.5.6-enterprise.0",
+  "description": "An enterprise-customizable fork of Vercel Labs' skills CLI for internal skill registries.",
   "type": "module",
   "bin": {
+    "enterprise-skills": "./bin/cli.mjs",
     "skills": "./bin/cli.mjs",
     "add-skill": "./bin/cli.mjs"
   },
@@ -33,9 +34,16 @@
   },
   "keywords": [
     "cli",
-    "agent-skills",
     "skills",
+    "enterprise-skills",
+    "agent-skills",
     "ai-agents",
+    "enterprise",
+    "internal-tools",
+    "internal-registry",
+    "private-registry",
+    "telemetry",
+    "custom-telemetry",
     "aider-desk",
     "amp",
     "antigravity",
@@ -94,13 +102,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vercel-labs/skills.git"
+    "url": "git+https://github.com/jacobstringfellow/skills.git"
   },
-  "homepage": "https://github.com/vercel-labs/skills#readme",
+  "homepage": "https://github.com/jacobstringfellow/skills/tree/enterprise#readme",
   "bugs": {
-    "url": "https://github.com/vercel-labs/skills/issues"
+    "url": "https://github.com/jacobstringfellow/skills/issues"
   },
-  "author": "",
+  "author": "Playlist Tech",
   "license": "MIT",
   "devDependencies": {
     "@clack/prompts": "^0.11.0",
