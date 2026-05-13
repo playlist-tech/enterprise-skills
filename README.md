@@ -2,6 +2,9 @@
 
 The CLI for the open agent skills ecosystem.
 
+> [!NOTE]
+> This is Playlist Tech's fork of [vercel-labs/skills](https://github.com/vercel-labs/skills). The `main` branch tracks upstream. Enterprise features and the published `@playlist-tech/enterprise-skills` npm package live on the [`enterprise` branch](https://github.com/jacobstringfellow/skills/tree/enterprise).
+
 <!-- agent-list:start -->
 
 Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [51 more](#supported-agents).
