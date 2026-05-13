@@ -4,7 +4,7 @@ import { sanitizeMetadata } from './sanitize.ts';
 import { track } from './telemetry.ts';
 import { isRepoPrivate } from './source-parser.ts';
 import { isRunningInAgent } from './detect-agent.ts';
-import { envConfig, buildSkillUrl, installCmd } from './env-config.ts';
+import { envConfig, buildSkillUrl, installCmd, findCmd } from './env-config.ts';
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
@@ -272,10 +272,10 @@ async function isRepoPublic(owner: string, repo: string): Promise<boolean> {
 export async function runFind(args: string[]): Promise<void> {
   const query = args.join(' ');
   const isNonInteractive = !process.stdin.isTTY;
-  const cli = envConfig.cliName;
   const cmd = installCmd();
+  const find = findCmd();
   const agentTip = `${DIM}Tip: if running in a coding agent, follow these steps:${RESET}
-${DIM}  1) ${cli} find [query]${RESET}
+${DIM}  1) ${find} [query]${RESET}
 ${DIM}  2) ${cmd} <owner/repo@skill>${RESET}`;
 
   // Non-interactive mode: just print results and exit
@@ -313,7 +313,7 @@ ${DIM}  2) ${cmd} <owner/repo@skill>${RESET}`;
   if (isNonInteractive || (await isRunningInAgent())) {
     console.log(agentTip);
     console.log();
-    console.log(`${DIM}Usage: ${envConfig.cliName} find <query>${RESET}`);
+    console.log(`${DIM}Usage: ${find} <query>${RESET}`);
     return;
   }
 

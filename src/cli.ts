@@ -15,7 +15,7 @@ import { sanitizeMetadata } from './sanitize.ts';
 import { runSync, parseSyncOptions } from './sync.ts';
 import { track, flushTelemetry } from './telemetry.ts';
 import { isRunningInAgent } from './detect-agent.ts';
-import { envConfig, installCmd } from './env-config.ts';
+import { envConfig, installCmd, findCmd } from './env-config.ts';
 import { agents, isUniversalAgent } from './agents.ts';
 import type { AgentType } from './types.ts';
 import { fetchSkillFolderHash, getGitHubToken } from './skill-lock.ts';
@@ -67,17 +67,23 @@ const GRAYS = [
 ];
 
 function showLogo(): void {
-  const lines = envConfig.logoLines ?? LOGO_LINES;
+  const customLines = envConfig.logoLines;
   console.log();
-  lines.forEach((line, i) => {
-    const color = GRAYS[i % GRAYS.length] ?? GRAYS[GRAYS.length - 1]!;
-    console.log(`${color}${line}${RESET}`);
-  });
+  if (customLines) {
+    // Custom lines may contain pre-colored ANSI codes — print as-is
+    customLines.forEach((line) => console.log(line));
+  } else {
+    LOGO_LINES.forEach((line, i) => {
+      const color = GRAYS[i % GRAYS.length] ?? GRAYS[GRAYS.length - 1]!;
+      console.log(`${color}${line}${RESET}`);
+    });
+  }
 }
 
 function showBanner(): void {
   const cli = envConfig.cliName;
   const cmd = installCmd();
+  const find = findCmd();
   const url = envConfig.urlBase;
   showLogo();
   console.log();
@@ -93,7 +99,7 @@ function showBanner(): void {
     `  ${DIM}$${RESET} ${TEXT}${cli} list${RESET}                 ${DIM}List installed skills${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}${cli} find ${DIM}[query]${RESET}         ${DIM}Search for skills${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}${find} ${DIM}[query]${RESET}         ${DIM}Search for skills${RESET}`
   );
   console.log();
   console.log(
