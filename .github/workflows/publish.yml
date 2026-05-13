@@ -19,6 +19,7 @@ on:
 
 jobs:
   publish:
+    if: false # disabled in enterprise fork — publishing handled by publish-enterprise.yml
     runs-on: ubuntu-latest
     permissions:
       contents: write
