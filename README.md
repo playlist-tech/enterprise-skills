@@ -1,6 +1,6 @@
-# skills
+# @playlist-tech/enterprise-skills
 
-The CLI for the open agent skills ecosystem.
+Enterprise fork of [Vercel Labs' skills CLI](https://github.com/vercel-labs/skills), adding support for private/internal skill registries and custom telemetry while we wait for those features upstream.
 
 <!-- agent-list:start -->
 
@@ -8,35 +8,40 @@ Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [51 more](#su
 
 <!-- agent-list:end -->
 
-[![skills.sh](https://skills.sh/b/vercel-labs/skills)](https://skills.sh/vercel-labs/skills)
+> [!NOTE]
+> **This is a Playlist Tech enterprise fork.** It is API-compatible with the upstream `skills` CLI — all commands and flags work the same way. Use it instead of `npx skills` when you need to pull skills from a private/internal registry or route telemetry to your own endpoint.
+>
+> Upstream repo: [vercel-labs/skills](https://github.com/vercel-labs/skills) — we track upstream releases and version as `<upstream-version>-enterprise.<n>` (e.g. `1.5.6-enterprise.0`).
 
 ## Install a Skill
 
 ```bash
-npx skills add vercel-labs/agent-skills
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo
 ```
 
 ### Source Formats
 
 ```bash
 # GitHub shorthand (owner/repo)
-npx skills add vercel-labs/agent-skills
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo
 
 # Full GitHub URL
-npx skills add https://github.com/vercel-labs/agent-skills
+npx @playlist-tech/enterprise-skills add https://github.com/your-org/your-skills-repo
 
 # Direct path to a skill in a repo
-npx skills add https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines
+npx @playlist-tech/enterprise-skills add https://github.com/your-org/your-skills-repo/tree/main/skills/my-skill
 
 # GitLab URL
-npx skills add https://gitlab.com/org/repo
+npx @playlist-tech/enterprise-skills add https://gitlab.com/org/repo
 
 # Any git URL
-npx skills add git@github.com:vercel-labs/agent-skills.git
+npx @playlist-tech/enterprise-skills add git@github.com:your-org/your-skills-repo.git
 
 # Local path
-npx skills add ./my-local-skills
+npx @playlist-tech/enterprise-skills add ./my-local-skills
 ```
+
+> The `skills` and `add-skill` binary aliases are also available for drop-in compatibility with scripts written against the upstream CLI.
 
 ### Options
 
@@ -54,28 +59,28 @@ npx skills add ./my-local-skills
 
 ```bash
 # List skills in a repository
-npx skills add vercel-labs/agent-skills --list
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo --list
 
 # Install specific skills
-npx skills add vercel-labs/agent-skills --skill frontend-design --skill skill-creator
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo --skill my-skill --skill another-skill
 
 # Install a skill with spaces in the name (must be quoted)
-npx skills add owner/repo --skill "Convex Best Practices"
+npx @playlist-tech/enterprise-skills add owner/repo --skill "Convex Best Practices"
 
 # Install to specific agents
-npx skills add vercel-labs/agent-skills -a claude-code -a opencode
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo -a claude-code -a opencode
 
 # Non-interactive installation (CI/CD friendly)
-npx skills add vercel-labs/agent-skills --skill frontend-design -g -a claude-code -y
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo --skill my-skill -g -a claude-code -y
 
 # Install all skills from a repo to all agents
-npx skills add vercel-labs/agent-skills --all
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo --all
 
 # Install all skills to specific agents
-npx skills add vercel-labs/agent-skills --skill '*' -a claude-code
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo --skill '*' -a claude-code
 
 # Install specific skills to all agents
-npx skills add vercel-labs/agent-skills --agent '*' --skill frontend-design
+npx @playlist-tech/enterprise-skills add your-org/your-skills-repo --agent '*' --skill my-skill
 ```
 
 ### Installation Scope
@@ -96,13 +101,13 @@ When installing interactively, you can choose:
 
 ## Other Commands
 
-| Command                      | Description                                   |
-| ---------------------------- | --------------------------------------------- |
-| `npx skills list`            | List installed skills (alias: `ls`)           |
-| `npx skills find [query]`    | Search for skills interactively or by keyword |
-| `npx skills remove [skills]` | Remove installed skills from agents           |
-| `npx skills update [skills]` | Update installed skills to latest versions    |
-| `npx skills init [name]`     | Create a new SKILL.md template                |
+| Command                                                       | Description                                   |
+| ------------------------------------------------------------- | --------------------------------------------- |
+| `npx @playlist-tech/enterprise-skills list`            | List installed skills (alias: `ls`)           |
+| `npx @playlist-tech/enterprise-skills find [query]`    | Search for skills interactively or by keyword |
+| `npx @playlist-tech/enterprise-skills remove [skills]` | Remove installed skills from agents           |
+| `npx @playlist-tech/enterprise-skills update [skills]` | Update installed skills to latest versions    |
+| `npx @playlist-tech/enterprise-skills init [name]`     | Create a new SKILL.md template                |
 
 ### `skills list`
 
@@ -110,13 +115,13 @@ List all installed skills. Similar to `npm ls`.
 
 ```bash
 # List all installed skills (project and global)
-npx skills list
+npx @playlist-tech/enterprise-skills list
 
 # List only global skills
-npx skills ls -g
+npx @playlist-tech/enterprise-skills ls -g
 
 # Filter by specific agents
-npx skills ls -a claude-code -a cursor
+npx @playlist-tech/enterprise-skills ls -a claude-code -a cursor
 ```
 
 ### `skills find`
@@ -125,30 +130,30 @@ Search for skills interactively or by keyword.
 
 ```bash
 # Interactive search (fzf-style)
-npx skills find
+npx @playlist-tech/enterprise-skills find
 
 # Search by keyword
-npx skills find typescript
+npx @playlist-tech/enterprise-skills find typescript
 ```
 
 ### `skills update`
 
 ```bash
 # Update all skills (interactive scope prompt)
-npx skills update
+npx @playlist-tech/enterprise-skills update
 
 # Update a single skill by name
-npx skills update my-skill
+npx @playlist-tech/enterprise-skills update my-skill
 
 # Update multiple specific skills
-npx skills update frontend-design web-design-guidelines
+npx @playlist-tech/enterprise-skills update frontend-design web-design-guidelines
 
 # Update only global or project skills
-npx skills update -g
-npx skills update -p
+npx @playlist-tech/enterprise-skills update -g
+npx @playlist-tech/enterprise-skills update -p
 
 # Non-interactive (auto-detects scope: project if in a project, else global)
-npx skills update -y
+npx @playlist-tech/enterprise-skills update -y
 ```
 
 | Option          | Description                                                               |
@@ -162,10 +167,10 @@ npx skills update -y
 
 ```bash
 # Create SKILL.md in current directory
-npx skills init
+npx @playlist-tech/enterprise-skills init
 
 # Create a new skill in a subdirectory
-npx skills init my-skill
+npx @playlist-tech/enterprise-skills init my-skill
 ```
 
 ### `skills remove`
@@ -174,31 +179,31 @@ Remove installed skills from agents.
 
 ```bash
 # Remove interactively (select from installed skills)
-npx skills remove
+npx @playlist-tech/enterprise-skills remove
 
 # Remove specific skill by name
-npx skills remove web-design-guidelines
+npx @playlist-tech/enterprise-skills remove web-design-guidelines
 
 # Remove multiple skills
-npx skills remove frontend-design web-design-guidelines
+npx @playlist-tech/enterprise-skills remove frontend-design web-design-guidelines
 
 # Remove from global scope
-npx skills remove --global web-design-guidelines
+npx @playlist-tech/enterprise-skills remove --global web-design-guidelines
 
 # Remove from specific agents only
-npx skills remove --agent claude-code cursor my-skill
+npx @playlist-tech/enterprise-skills remove --agent claude-code cursor my-skill
 
 # Remove all installed skills without confirmation
-npx skills remove --all
+npx @playlist-tech/enterprise-skills remove --all
 
 # Remove all skills from a specific agent
-npx skills remove --skill '*' -a cursor
+npx @playlist-tech/enterprise-skills remove --skill '*' -a cursor
 
 # Remove a specific skill from all agents
-npx skills remove my-skill --agent '*'
+npx @playlist-tech/enterprise-skills remove my-skill --agent '*'
 
 # Use 'rm' alias
-npx skills rm my-skill
+npx @playlist-tech/enterprise-skills rm my-skill
 ```
 
 | Option         | Description                                      |
@@ -220,7 +225,7 @@ Skills let agents perform specialized tasks like:
 - Creating PRs following your team's conventions
 - Integrating with external tools (Linear, Notion, etc.)
 
-Discover skills at **[skills.sh](https://skills.sh)**
+Discover public skills at **[skills.sh](https://skills.sh)**
 
 ## Supported Agents
 
@@ -452,7 +457,7 @@ Ensure you have write access to the target directory.
 
 ```bash
 # Install internal skills
-INSTALL_INTERNAL_SKILLS=1 npx skills add vercel-labs/agent-skills --list
+INSTALL_INTERNAL_SKILLS=1 npx @playlist-tech/enterprise-skills add your-org/your-skills-repo --list
 ```
 
 ## Telemetry
@@ -463,6 +468,8 @@ Telemetry is automatically disabled in CI environments.
 
 ## Related Links
 
+- [Enterprise fork (this repo)](https://github.com/jacobstringfellow/skills/tree/enterprise)
+- [Upstream: vercel-labs/skills](https://github.com/vercel-labs/skills)
 - [Agent Skills Specification](https://agentskills.io)
 - [Skills Directory](https://skills.sh)
 - [Amp Skills Documentation](https://ampcode.com/manual#agent-skills)
