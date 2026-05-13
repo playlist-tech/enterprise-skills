@@ -47,7 +47,7 @@ Never publish a version that doesn't include the `-enterprise.<n>` prerelease su
 
    `prepublishOnly` will run `pnpm build` automatically before publishing. The `.npmrc` in this repo sets `access=public` so no extra flags are needed.
 
-4. **Commit and tag**:
+4. **Commit, tag, and push**:
 
    ```bash
    git add package.json pnpm-lock.yaml
@@ -55,6 +55,8 @@ Never publish a version that doesn't include the `-enterprise.<n>` prerelease su
    git tag v1.5.6-enterprise.1
    git push && git push --tags
    ```
+
+   Pushing the tag triggers the `publish-enterprise` GitHub Actions workflow, which builds and publishes to npm automatically. You do not need to run `npm publish` manually.
 
 ## Snapshot releases
 
