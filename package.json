@@ -1,6 +1,6 @@
 {
   "name": "@playlist-tech/enterprise-skills",
-  "version": "1.5.6-enterprise.0",
+  "version": "1.5.6-enterprise.1",
   "description": "An enterprise-customizable fork of Vercel Labs' skills CLI for internal skill registries.",
   "type": "module",
   "bin": {
