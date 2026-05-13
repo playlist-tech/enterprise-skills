@@ -38,8 +38,6 @@ jobs:
       - name: Publish to npm
         id: publish
         run: npm publish --provenance --access public --tag enterprise
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
       - name: Create GitHub Release
         if: steps.publish.outcome == 'success'
