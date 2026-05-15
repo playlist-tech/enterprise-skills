@@ -2,7 +2,7 @@ import * as readline from 'readline';
 import { runAdd, parseAddOptions } from './add.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import { track } from './telemetry.ts';
-import { getRepoVisibility } from './source-parser.ts';
+import { isRepoPrivate } from './source-parser.ts';
 import { isRunningInAgent } from './detect-agent.ts';
 import { envConfig, installCmd, findCmd } from './env-config.ts';
 
@@ -261,7 +261,10 @@ function getOwnerRepoFromString(pkg: string): { owner: string; repo: string } | 
 }
 
 async function isRepoPublic(owner: string, repo: string): Promise<boolean> {
-  return (await getRepoVisibility(owner, repo)) === 'public';
+  const isPrivate = await isRepoPrivate(owner, repo);
+  // Return true only if we know it's public (isPrivate === false)
+  // Return false if private or unable to determine
+  return isPrivate === false;
 }
 
 export async function runFind(args: string[]): Promise<void> {
