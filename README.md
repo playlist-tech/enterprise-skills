@@ -2,6 +2,9 @@
 
 Enterprise fork of [Vercel Labs' skills CLI](https://github.com/vercel-labs/skills), adding support for private/internal skill registries and custom telemetry while we wait for those features upstream.
 
+> [!NOTE]
+> This is Playlist Tech's fork of [vercel-labs/skills](https://github.com/vercel-labs/skills). The `main` branch tracks upstream. Enterprise features and the published `@playlist-tech/enterprise-skills` npm package live on the [`enterprise` branch](https://github.com/jacobstringfellow/skills/tree/enterprise).
+
 <!-- agent-list:start -->
 
 Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [51 more](#supported-agents).
