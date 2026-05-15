@@ -84,7 +84,7 @@ function showBanner(): void {
   const cli = envConfig.cliName;
   const cmd = installCmd();
   const find = findCmd();
-  const url = envConfig.urlBase;
+  const url = envConfig.apiBase;
   showLogo();
   console.log();
   console.log(`${DIM}The open agent skills ecosystem${RESET}`);

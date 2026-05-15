@@ -4,7 +4,7 @@ import { sanitizeMetadata } from './sanitize.ts';
 import { track } from './telemetry.ts';
 import { isRepoPrivate } from './source-parser.ts';
 import { isRunningInAgent } from './detect-agent.ts';
-import { envConfig, buildSkillUrl, installCmd, findCmd } from './env-config.ts';
+import { envConfig, installCmd, findCmd } from './env-config.ts';
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
@@ -303,7 +303,7 @@ ${DIM}  2) ${cmd} <owner/repo@skill>${RESET}`;
       console.log(
         `${TEXT}${pkg}@${skill.name}${RESET}${installs ? ` ${CYAN}${installs}${RESET}` : ''}`
       );
-      console.log(`${DIM}└ ${buildSkillUrl(skill.slug)}${RESET}`);
+      console.log(`${DIM}└ ${envConfig.apiBase}/${skill.slug}${RESET}`);
       console.log();
     }
     return;
@@ -349,9 +349,11 @@ ${DIM}  2) ${cmd} <owner/repo@skill>${RESET}`;
 
   const info = getOwnerRepoFromString(pkg);
   if (info && (await isRepoPublic(info.owner, info.repo))) {
-    console.log(`${DIM}View the skill at${RESET} ${TEXT}${buildSkillUrl(selected.slug)}${RESET}`);
+    console.log(
+      `${DIM}View the skill at${RESET} ${TEXT}${envConfig.apiBase}/${selected.slug}${RESET}`
+    );
   } else {
-    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}${envConfig.urlBase}${RESET}`);
+    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}${envConfig.apiBase}${RESET}`);
   }
 
   console.log();
