@@ -14,9 +14,6 @@ const CYAN = '\x1b[36m';
 const MAGENTA = '\x1b[35m';
 const YELLOW = '\x1b[33m';
 
-// API endpoint for skills search
-const SEARCH_API_BASE = process.env.SKILLS_API_URL || 'https://skills.sh';
-
 function formatInstalls(count: number): string {
   if (!count || count <= 0) return '';
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M installs`;
@@ -34,7 +31,7 @@ export interface SearchSkill {
 // Search via API
 export async function searchSkillsAPI(query: string): Promise<SearchSkill[]> {
   try {
-    const url = `${SEARCH_API_BASE}/api/search?q=${encodeURIComponent(query)}&limit=10`;
+    const url = `${envConfig.apiBase}/api/search?q=${encodeURIComponent(query)}&limit=10`;
     const res = await fetch(url);
 
     if (!res.ok) return [];
