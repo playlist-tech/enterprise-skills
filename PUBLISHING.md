@@ -27,16 +27,40 @@ The only things that should be cherry-picked from `enterprise` to `main` are wor
 
 Most features should be upstreamable to [vercel-labs/skills](https://github.com/vercel-labs/skills). The default workflow:
 
-1. **Branch off `main`** — keeps the feature branch free of enterprise-specific code
-2. **Open two PRs simultaneously**:
-   - One to `vercel-labs/skills` (upstream contribution)
-   - One to `enterprise` (for immediate use in the fork)
-3. **Merge into `enterprise`** without waiting for upstream to accept
-4. **Bump `package.json` version** on `enterprise` (e.g. `1.5.6-enterprise.0` → `1.5.6-enterprise.1`) and push
-5. **Tag and release** as normal
-5. **When upstream merges**: the feature comes back naturally on the next upstream sync — no duplicate work needed
+1. **Branch off `upstream/main`** — this is the critical step that keeps the feature branch free of enterprise-specific files. Branching off the local `main` will include workflows, CODEOWNERS, and README changes that don't belong in an upstream PR.
 
-**Keep feature branches free of these enterprise-specific files** so the upstream PR stays clean:
+   ```bash
+   git fetch upstream
+   git checkout -b feat/my-feature upstream/main
+   ```
+
+2. **Do the work and commit**
+
+3. **Open the upstream PR**:
+   ```bash
+   gh pr create --repo vercel-labs/skills --base main
+   ```
+
+4. **Create an enterprise branch for immediate use**:
+   ```bash
+   git checkout -b feat/my-feature-enterprise
+   git pull origin enterprise   # brings in enterprise history and files
+   # resolve any conflicts (e.g. renamed functions between enterprise and upstream)
+   ```
+
+5. **Open the enterprise PR**:
+   ```bash
+   gh pr create --base enterprise
+   ```
+
+6. **Merge into `enterprise`** without waiting for upstream to accept
+7. **Bump `package.json` version** on `enterprise` (e.g. `1.5.6-enterprise.0` → `1.5.6-enterprise.1`) and push
+8. **Tag and release** as normal
+9. **When upstream merges**: the feature comes back naturally on the next upstream sync — no duplicate work needed
+
+**Why `upstream/main` and not `main`?** The fork's `main` accumulates enterprise-only files (workflow files required by GitHub to be on the default branch) that upstream doesn't have. Any branch started from `main` will carry those into the upstream PR diff. Starting from `upstream/main` gives a clean slate.
+
+**Enterprise-only files that must never appear in an upstream PR:**
 - `package.json` (name, version, description, bin, repository, homepage, bugs, author, keywords)
 - `README.md`
 - `AGENTS.md`
