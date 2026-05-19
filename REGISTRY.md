@@ -19,6 +19,8 @@ Search for skills by keyword.
 
 ```json
 {
+  "query": "find-skills",
+  "searchType": "fuzzy",
   "skills": [
     {
       "id": "vercel-labs/skills/find-skills",
@@ -27,11 +29,23 @@ Search for skills by keyword.
       "installs": 1591220,
       "source": "vercel-labs/skills"
     }
-  ]
+  ],
+  "count": 1,
+  "duration_ms": 42
 }
 ```
 
-**Fields**
+**Envelope fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | no | The search query that produced these results. |
+| `searchType` | string | no | Search strategy used (e.g. `"fuzzy"`, `"all"`). |
+| `skills` | array | yes | Array of skill results. |
+| `count` | number | no | Total number of results returned. |
+| `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
+
+**Skill fields**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
