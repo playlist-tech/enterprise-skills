@@ -608,7 +608,6 @@ async function updateGlobalSkills(
     return { successCount, failCount, checkedCount: 0 };
   }
 
-  const token = getGitHubToken();
   const updates: Array<{ name: string; source: string; entry: SkillLockEntry }> = [];
   const skipped: SkippedSkill[] = [];
   const checkable: Array<{ name: string; entry: SkillLockEntry }> = [];
@@ -643,7 +642,7 @@ async function updateGlobalSkills(
       const latestHash = await fetchSkillFolderHash(
         entry.source,
         entry.skillPath!,
-        token,
+        getGitHubToken,
         entry.ref
       );
       if (latestHash && latestHash !== entry.skillFolderHash) {

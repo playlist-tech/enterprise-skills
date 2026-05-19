@@ -1043,12 +1043,11 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       const owner = ownerRepo?.split('/')[0]?.toLowerCase();
       if (ownerRepo && owner && BLOB_ALLOWED_OWNERS.includes(owner)) {
         spinner.start('Fetching skills...');
-        const token = getGitHubToken();
         blobResult = await tryBlobInstall(ownerRepo, {
           subpath: parsed.subpath,
           skillFilter: parsed.skillFilter,
           ref: parsed.ref,
-          token,
+          getToken: getGitHubToken,
           includeInternal,
         });
         if (!blobResult) {
@@ -1621,8 +1620,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       // for all skills — avoids N sequential API calls that take ~400ms each.
       let cachedTree: Awaited<ReturnType<typeof fetchRepoTree>> | undefined;
       if (parsed.type === 'github' && !blobResult) {
-        const token = getGitHubToken();
-        cachedTree = await fetchRepoTree(normalizedSource, parsed.ref, token);
+        cachedTree = await fetchRepoTree(normalizedSource, parsed.ref, getGitHubToken);
       }
 
       for (const skill of selectedSkills) {
