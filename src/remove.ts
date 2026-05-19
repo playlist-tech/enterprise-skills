@@ -4,6 +4,7 @@ import { readdir, rm, lstat } from 'fs/promises';
 import { join } from 'path';
 import { agents, detectInstalledAgents } from './agents.ts';
 import { track, shouldSendTelemetry } from './telemetry.ts';
+import { detectAgent } from './detect-agent.ts';
 import { removeSkillFromLock, getSkillFromLock } from './skill-lock.ts';
 import { parseOwnerRepo, getRepoVisibility } from './source-parser.ts';
 import type { AgentType } from './types.ts';

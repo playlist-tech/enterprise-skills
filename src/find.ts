@@ -3,6 +3,8 @@ import { runAdd, parseAddOptions } from './add.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import { track } from './telemetry.ts';
 import { getRepoVisibility } from './source-parser.ts';
+import { isRunningInAgent } from './detect-agent.ts';
+import { envConfig, installCmd, findCmd } from './env-config.ts';
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
