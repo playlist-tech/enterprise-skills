@@ -57,7 +57,10 @@ Search for skills by keyword.
 
 ### `GET /{id}`
 
-Returns detail for a single skill. The `id` value from a search result is used as the path.
+Returns detail for a single skill. Two URL forms are supported:
+
+- `GET /{id}` — look up by the `id` field from a search result (e.g. `vercel-labs/skills/find-skills` or a UUID for registries that use opaque identifiers)
+- `GET /{skillId}` — look up by the `skillId` field (e.g. `find-skills`, or a full path slug like `{source}/{name}` for self-hosted registries)
 
 **Response**: the full skill record. Shape is registry-defined; the CLI does not currently consume this endpoint directly but links to it in terminal output.
 
