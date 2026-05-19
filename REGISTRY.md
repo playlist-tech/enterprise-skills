@@ -55,7 +55,7 @@ Search for skills by keyword.
 | `installs` | number | yes | Install count. Use `0` if not tracked. |
 | `source` | string | yes | Repository source in `{org}/{repo}` format. |
 
-### `GET /{id}`
+### GET Skill Details
 
 Returns detail for a single skill. Two URL forms are supported:
 
