@@ -71,6 +71,7 @@ export async function wireUserPromptHook(options: HookWiringOptions): Promise<bo
 
   const startCmdTemplate = getHookStartCmd();
   if (!startCmdTemplate) return false;
+  if (!startCmdTemplate.includes('{{skill_id}}')) return false;
 
   const home = options.home ?? homedir();
   const hooksPath = join(home, config.hooksFile);
@@ -109,7 +110,7 @@ export async function removeUserPromptHook(
   const hooks = settings['hooks'] as Record<string, unknown> | undefined;
   if (!hooks) return false;
 
-  const needle = `--skill-id ${skillId}`;
+  const needle = skillId;
   const promptHooks = hooks[config.promptEvent];
   if (!Array.isArray(promptHooks)) return false;
 
@@ -227,7 +228,7 @@ function writePromptHook(
   const hooks = getOrCreateHooks(settings);
   const entries = getEventEntries(hooks, event);
 
-  const needle = `--skill-id ${skillId}`;
+  const needle = skillId;
   const others = entries.filter((e) => !entryContainsCommand(e, needle, schema));
 
   // If there's an existing entry for this skill-id that already has the right command, no-op.

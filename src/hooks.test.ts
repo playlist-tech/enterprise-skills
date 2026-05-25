@@ -159,6 +159,17 @@ describe('wireUserPromptHook', () => {
     expect(changed).toBe(false);
   });
 
+  it('returns false when SKILLS_HOOK_START_CMD does not contain {{skill_id}}', async () => {
+    process.env['SKILLS_HOOK_START_CMD'] = 'my-tracker --agent {{agent}}';
+    const changed = await wireUserPromptHook({
+      skillName: 'my-skill',
+      skillId: 'abc-123',
+      agent: 'claude-code',
+      home,
+    });
+    expect(changed).toBe(false);
+  });
+
   it('substitutes {{skill_id}}, {{skill_name}}, {{agent}} tokens', async () => {
     await wireUserPromptHook({
       skillName: 'pr-review',
