@@ -336,8 +336,10 @@ export async function saveSelectedAgents(agents: string[]): Promise<void> {
 }
 
 /**
- * Record that a skill's prompt hook is in use by a global or project-scoped install.
- * Should be called after successfully wiring the prompt hook.
+ * Record that a skill's prompt hook is desired for a global or project-scoped install.
+ * Called whenever hook wiring is enabled and the agent supports prompt hooks, regardless
+ * of whether the wire call was a no-op (idempotent reinstall). This ensures ref counts
+ * stay accurate across reinstalls.
  */
 export async function addHookRef(
   skillId: string,
