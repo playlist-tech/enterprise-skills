@@ -41,16 +41,19 @@ Most features should be upstreamable to [vercel-labs/skills](https://github.com/
    gh pr create --repo vercel-labs/skills --base main
    ```
 
-4. **Create an enterprise branch for immediate use**:
+4. **Create an enterprise branch for immediate use** — branch off the upstream feature branch (not off `enterprise`), then merge `enterprise` in:
    ```bash
+   # Still on feat/my-feature from step 1
    git checkout -b feat/my-feature-enterprise
-   git pull origin enterprise   # brings in enterprise history and files
+   git merge origin/enterprise   # brings in enterprise history and files
    # resolve any conflicts (e.g. renamed functions between enterprise and upstream)
    ```
 
+   This order matters: starting from the upstream feature branch keeps your enterprise PR diff small (only enterprise-specific additions). If you branch off `enterprise` and cherry-pick the feature in, the diff will include everything `enterprise` has diverged from upstream.
+
 5. **Open the enterprise PR**:
    ```bash
-   gh pr create --base enterprise
+   gh pr create --repo jacobstringfellow/skills --base enterprise
    ```
 
 6. **Merge into `enterprise`** without waiting for upstream to accept
@@ -137,8 +140,23 @@ To publish a pre-release for testing before bumping the official version, use an
 
 ## Syncing with upstream
 
-When upstream releases a new version:
+Run this whenever upstream merges new commits (new release, or just PRs landing):
 
-1. Merge or cherry-pick upstream changes into the `enterprise` branch.
-2. Update the version in `package.json` to `<new-upstream-version>-enterprise.0`.
-3. Follow the release steps above.
+```bash
+git fetch upstream
+
+# 1. Sync fork main (keeps the GitHub UI badge clean — "N commits behind" goes to 0)
+git checkout main
+git merge upstream/main --no-edit
+git push origin main
+
+# 2. Sync enterprise (this is the integration step that actually matters)
+git checkout enterprise
+git merge upstream/main --no-edit
+# resolve conflicts, then:
+git push origin enterprise
+```
+
+**Why not `main → enterprise`?** Fork `main` is ahead of upstream because it carries GitHub Actions workflow files that must live on the default branch. Merging `main` into `enterprise` would pull those in redundantly. Merge `upstream/main` directly into `enterprise` instead.
+
+After syncing `enterprise`, update the version in `package.json` to `<new-upstream-version>-enterprise.0` and follow the release steps above.
