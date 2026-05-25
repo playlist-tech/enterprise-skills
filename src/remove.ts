@@ -238,8 +238,10 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
         }
       }
 
-      // Unref the hook and only physically remove it when no installs remain
-      if (skillId) {
+      // Only unref / remove hooks when the skill is fully gone from this scope.
+      // A partial --agent remove leaves the skill installed for other agents, so
+      // the prompt hook should stay active.
+      if (skillId && !isStillUsed) {
         try {
           const shouldRemove = await removeHookRef(
             skillId,

@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
-import { determineAgent } from '@vercel/detect-agent';
 import { agents } from './agents.ts';
 import type { AgentType, HookSchema } from './types.ts';
 
@@ -76,16 +75,10 @@ export async function wireUserPromptHook(options: HookWiringOptions): Promise<bo
   const home = options.home ?? homedir();
   const hooksPath = join(home, config.hooksFile);
 
-  // Detect the running agent at install time to bake into the command string.
-  // Copilot env vars are absent at hook execution time, so agent identity must
-  // be resolved now, not at hook runtime.
-  const agentResult = await determineAgent();
-  const resolvedAgent = agentResult.isAgent ? agentResult.agent.name : config.name;
-
   const startCmd = startCmdTemplate
     .replace('{{skill_id}}', skillId)
     .replace('{{skill_name}}', skillName)
-    .replace('{{agent}}', resolvedAgent);
+    .replace('{{agent}}', config.name);
 
   return writePromptHook(hooksPath, config.hookSchema, config.promptEvent, startCmd, skillId);
 }

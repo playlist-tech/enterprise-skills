@@ -9,11 +9,6 @@ import {
   isHookSetupDone,
 } from './hooks.ts';
 
-// @vercel/detect-agent is mocked so tests don't depend on actual env vars
-vi.mock('@vercel/detect-agent', () => ({
-  determineAgent: vi.fn(() => ({ isAgent: true, agent: { name: 'claude-code' } })),
-}));
-
 // ─── helpers ───────────────────────────────────────────────────────────────
 
 function readJson(path: string): Record<string, unknown> {

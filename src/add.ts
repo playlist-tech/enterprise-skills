@@ -1559,6 +1559,10 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     const successfullyInstalledSkillNames = new Set(
       results.filter((r) => r.success).map((r) => r.skill)
     );
+    const hookStartCmdSet = !!process.env['SKILLS_HOOK_START_CMD']?.trim();
+    const hookCapableAgents = targetAgents.filter(
+      (a) => agents[a].promptEvent && agents[a].hooksFile
+    );
     for (const skill of selectedSkills) {
       if (!successfullyInstalledSkillNames.has(getSkillDisplayName(skill))) continue;
       const skillId = (skill.metadata?.['skill_id'] ?? skill.metadata?.['id']) as
@@ -1566,16 +1570,17 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         | undefined;
       if (!skillId) continue;
       const skillName = getSkillDisplayName(skill);
-      let anyWired = false;
       for (const agentName of targetAgents) {
         try {
-          const hooked = await wireUserPromptHook({ skillName, skillId, agent: agentName });
-          if (hooked) anyWired = true;
+          await wireUserPromptHook({ skillName, skillId, agent: agentName });
         } catch {
           // Hook wiring is best-effort — never fail an install
         }
       }
-      if (anyWired) {
+      // Record the ref whenever hook wiring is enabled for this install, regardless
+      // of whether this specific call was a no-op (idempotent reinstall). This ensures
+      // a later uninstall from a different scope doesn't tear down the hook prematurely.
+      if (hookStartCmdSet && hookCapableAgents.length > 0) {
         try {
           await addHookRef(skillId, installGlobally ? { global: true } : { projectPath: cwd });
         } catch {
