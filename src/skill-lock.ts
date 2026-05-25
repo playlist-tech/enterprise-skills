@@ -35,6 +35,8 @@ export interface SkillLockEntry {
   updatedAt: string;
   /** Name of the plugin this skill belongs to (if any) */
   pluginName?: string;
+  /** Skill UUID from the registry, stored at install time for hook unwiring */
+  skillId?: string;
 }
 
 /**
