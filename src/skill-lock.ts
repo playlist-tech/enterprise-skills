@@ -48,6 +48,15 @@ export interface DismissedPrompts {
 }
 
 /**
+ * Tracks which installs (global or per-project) are keeping a skill's prompt hook alive.
+ * The hook is removed only when both globalInstall is false and projectPaths is empty.
+ */
+export interface HookRef {
+  globalInstall: boolean;
+  projectPaths: string[];
+}
+
+/**
  * The structure of the skill lock file.
  */
 export interface SkillLockFile {
@@ -59,6 +68,8 @@ export interface SkillLockFile {
   dismissed?: DismissedPrompts;
   /** Last selected agents for installation */
   lastSelectedAgents?: string[];
+  /** Ref-counts active installations keyed by skillId — drives hook lifecycle */
+  hookRefs?: Record<string, HookRef>;
 }
 
 /**
@@ -322,4 +333,58 @@ export async function saveSelectedAgents(agents: string[]): Promise<void> {
   const lock = await readSkillLock();
   lock.lastSelectedAgents = agents;
   await writeSkillLock(lock);
+}
+
+/**
+ * Record that a skill's prompt hook is in use by a global or project-scoped install.
+ * Should be called after successfully wiring the prompt hook.
+ */
+export async function addHookRef(
+  skillId: string,
+  scope: { global: true } | { projectPath: string }
+): Promise<void> {
+  const lock = await readSkillLock();
+  if (!lock.hookRefs) lock.hookRefs = {};
+  const ref = lock.hookRefs[skillId] ?? { globalInstall: false, projectPaths: [] };
+
+  if ('global' in scope) {
+    ref.globalInstall = true;
+  } else {
+    if (!ref.projectPaths.includes(scope.projectPath)) {
+      ref.projectPaths.push(scope.projectPath);
+    }
+  }
+
+  lock.hookRefs[skillId] = ref;
+  await writeSkillLock(lock);
+}
+
+/**
+ * Remove one reference to a skill's prompt hook.
+ * Returns true if the hook should now be removed (no remaining refs).
+ */
+export async function removeHookRef(
+  skillId: string,
+  scope: { global: true } | { projectPath: string }
+): Promise<boolean> {
+  const lock = await readSkillLock();
+  if (!lock.hookRefs) return true;
+  const ref = lock.hookRefs[skillId];
+  if (!ref) return true;
+
+  if ('global' in scope) {
+    ref.globalInstall = false;
+  } else {
+    ref.projectPaths = ref.projectPaths.filter((p) => p !== scope.projectPath);
+  }
+
+  const shouldRemove = !ref.globalInstall && ref.projectPaths.length === 0;
+  if (shouldRemove) {
+    delete lock.hookRefs[skillId];
+  } else {
+    lock.hookRefs[skillId] = ref;
+  }
+
+  await writeSkillLock(lock);
+  return shouldRemove;
 }

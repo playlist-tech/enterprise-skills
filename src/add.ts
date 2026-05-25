@@ -42,6 +42,7 @@ import { wireUserPromptHook } from './hooks.ts';
 import { wellKnownProvider, type WellKnownSkill } from './providers/index.ts';
 import {
   addSkillToLock,
+  addHookRef,
   fetchSkillFolderHash,
   getGitHubToken,
   isPromptDismissed,
@@ -1561,11 +1562,20 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         | undefined;
       if (!skillId) continue;
       const skillName = getSkillDisplayName(skill);
+      let wired = false;
       for (const agentName of targetAgents) {
         try {
           await wireUserPromptHook({ skillName, skillId, agent: agentName });
+          wired = true;
         } catch {
           // Hook wiring is best-effort — never fail an install
+        }
+      }
+      if (wired) {
+        try {
+          await addHookRef(skillId, installGlobally ? { global: true } : { projectPath: cwd });
+        } catch {
+          // ref tracking is best-effort
         }
       }
     }
@@ -1684,6 +1694,9 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 ? (skill as BlobSkill).snapshotHash
                 : await computeSkillFolderHash(skill.path);
             const skillPathValue = skillFiles[skill.name];
+            const localSkillId = (skill.metadata?.['skill_id'] ?? skill.metadata?.['id']) as
+              | string
+              | undefined;
             await addSkillToLocalLock(
               skill.name,
               {
@@ -1692,6 +1705,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 sourceType: parsed.type,
                 ...(skillPathValue && { skillPath: skillPathValue }),
                 computedHash,
+                ...(localSkillId && { skillId: localSkillId }),
               },
               cwd
             );

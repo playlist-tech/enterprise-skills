@@ -5,9 +5,10 @@ import { join } from 'path';
 import { agents, detectInstalledAgents } from './agents.ts';
 import { track, shouldSendTelemetry } from './telemetry.ts';
 import { detectAgent } from './detect-agent.ts';
-import { removeSkillFromLock, getSkillFromLock } from './skill-lock.ts';
+import { removeSkillFromLock, getSkillFromLock, removeHookRef } from './skill-lock.ts';
 import { parseOwnerRepo, getRepoVisibility } from './source-parser.ts';
 import { removeUserPromptHook } from './hooks.ts';
+import { getLocalLockPath, readLocalLock } from './local-lock.ts';
 import type { AgentType } from './types.ts';
 import {
   getInstallPath,
@@ -226,14 +227,35 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
       const effectiveSource = lockEntry?.source || 'local';
       const effectiveSourceType = lockEntry?.sourceType || 'local';
 
-      // Remove per-skill prompt hooks if we have the skill UUID (non-fatal)
-      if (lockEntry?.skillId) {
-        for (const agentKey of targetAgents) {
-          try {
-            await removeUserPromptHook({ skillId: lockEntry.skillId, agent: agentKey });
-          } catch {
-            // Hook removal is best-effort — never fail an uninstall
+      // Resolve skillId from global lock (global install) or local lock (project install)
+      let skillId: string | undefined = lockEntry?.skillId;
+      if (!skillId && !isGlobal) {
+        try {
+          const localLock = await readLocalLock(cwd);
+          skillId = localLock.skills[skillName]?.skillId;
+        } catch {
+          // best-effort
+        }
+      }
+
+      // Unref the hook and only physically remove it when no installs remain
+      if (skillId) {
+        try {
+          const shouldRemove = await removeHookRef(
+            skillId,
+            isGlobal ? { global: true } : { projectPath: cwd }
+          );
+          if (shouldRemove) {
+            for (const agentKey of targetAgents) {
+              try {
+                await removeUserPromptHook({ skillId, agent: agentKey });
+              } catch {
+                // Hook removal is best-effort — never fail an uninstall
+              }
+            }
           }
+        } catch {
+          // ref tracking is best-effort
         }
       }
 

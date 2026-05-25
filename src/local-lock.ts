@@ -33,6 +33,8 @@ export interface LocalSkillLockEntry {
    * computes the hash from actual file contents on disk.
    */
   computedHash: string;
+  /** Skill UUID from the registry — stored so project-scoped removes can unref prompt hooks */
+  skillId?: string;
 }
 
 /**

@@ -87,6 +87,23 @@ describe('wireStopHook', () => {
     );
   });
 
+  it('writes nested stop + StopFailure hooks for claude-code', async () => {
+    const changed = await wireStopHook('claude-code', { home });
+    expect(changed).toBe(true);
+
+    const settings = readJson(join(home, '.claude', 'settings.json'));
+    const hooks = settings['hooks'] as Record<string, unknown>;
+    expect(hooks['Stop'] as unknown[]).toHaveLength(1);
+    expect(((hooks['Stop'] as unknown[])[0] as Record<string, unknown>)['hooks']).toBeDefined();
+    expect(hooks['StopFailure'] as unknown[]).toHaveLength(1);
+    const failInner = ((hooks['StopFailure'] as unknown[])[0] as Record<string, unknown>)[
+      'hooks'
+    ] as unknown[];
+    expect((failInner[0] as Record<string, unknown>)['command']).toBe(
+      'playlist-skills track stop --succeeded=false'
+    );
+  });
+
   it('is idempotent — second call returns false and does not duplicate entries', async () => {
     await wireStopHook('claude-code', { home });
     const changed = await wireStopHook('claude-code', { home });
