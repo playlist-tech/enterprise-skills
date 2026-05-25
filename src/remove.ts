@@ -8,7 +8,7 @@ import { detectAgent } from './detect-agent.ts';
 import { removeSkillFromLock, getSkillFromLock, removeHookRef } from './skill-lock.ts';
 import { parseOwnerRepo, getRepoVisibility } from './source-parser.ts';
 import { removeUserPromptHook } from './hooks.ts';
-import { getLocalLockPath, readLocalLock } from './local-lock.ts';
+import { readLocalLock } from './local-lock.ts';
 import type { AgentType } from './types.ts';
 import {
   getInstallPath,

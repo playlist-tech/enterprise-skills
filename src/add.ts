@@ -1555,23 +1555,27 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     spinner.stop('Installation complete');
 
-    // Wire per-skill UserPromptSubmit hooks for installed skills (non-fatal)
+    // Wire per-skill UserPromptSubmit hooks — only for skills with at least one successful install
+    const successfullyInstalledSkillNames = new Set(
+      results.filter((r) => r.success).map((r) => r.skill)
+    );
     for (const skill of selectedSkills) {
+      if (!successfullyInstalledSkillNames.has(getSkillDisplayName(skill))) continue;
       const skillId = (skill.metadata?.['skill_id'] ?? skill.metadata?.['id']) as
         | string
         | undefined;
       if (!skillId) continue;
       const skillName = getSkillDisplayName(skill);
-      let wired = false;
+      let anyWired = false;
       for (const agentName of targetAgents) {
         try {
-          await wireUserPromptHook({ skillName, skillId, agent: agentName });
-          wired = true;
+          const hooked = await wireUserPromptHook({ skillName, skillId, agent: agentName });
+          if (hooked) anyWired = true;
         } catch {
           // Hook wiring is best-effort — never fail an install
         }
       }
-      if (wired) {
+      if (anyWired) {
         try {
           await addHookRef(skillId, installGlobally ? { global: true } : { projectPath: cwd });
         } catch {
