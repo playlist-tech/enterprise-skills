@@ -68,6 +68,11 @@ async function getSourceVisibility(source: string): Promise<SourceVisibility> {
   return getRepoVisibility(ownerRepo.owner, ownerRepo.repo);
 }
 
+export function getLockSource(parsedUrl: string, normalizedSource: string | null): string | null {
+  const isSSH = parsedUrl.startsWith('git@') || parsedUrl.startsWith('ssh://');
+  return isSSH ? parsedUrl : normalizedSource;
+}
+
 export function initTelemetry(version: string): void {
   setVersion(version);
 }
@@ -1578,11 +1583,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     // Normalize source to owner/repo format for telemetry
     const normalizedSource = getOwnerRepo(parsed);
 
-    // Preserve SSH URLs in lock files instead of normalizing to owner/repo shorthand.
-    // When normalizedSource is used, parseSource() later resolves it to HTTPS,
-    // breaking restore for private repos that require SSH authentication.
-    const isSSH = parsed.url.startsWith('git@');
-    const lockSource = isSSH ? parsed.url : normalizedSource;
+    const lockSource = getLockSource(parsed.url, normalizedSource);
 
     // Only track if we have a valid remote source. repoPrivacyPromise was
     // started early (right after parsing) so it has already been running in
