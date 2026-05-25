@@ -77,9 +77,9 @@ export async function wireUserPromptHook(options: HookWiringOptions): Promise<bo
   const hooksPath = join(home, config.hooksFile);
 
   const startCmd = startCmdTemplate
-    .replace('{{skill_id}}', skillId)
-    .replace('{{skill_name}}', skillName)
-    .replace('{{agent}}', config.name);
+    .replaceAll('{{skill_id}}', skillId)
+    .replaceAll('{{skill_name}}', skillName)
+    .replaceAll('{{agent}}', config.name);
 
   return writePromptHook(hooksPath, config.hookSchema, config.promptEvent, startCmd, skillId);
 }
