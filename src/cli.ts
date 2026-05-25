@@ -2,8 +2,10 @@
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { basename, join, dirname } from 'path';
+import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { runAdd, parseAddOptions, initTelemetry } from './add.ts';
+import { wireStopHook, isHookSetupDone } from './hooks.ts';
 import { runFind } from './find.ts';
 import { runInstallFromLock } from './install.ts';
 import { runList } from './list.ts';
@@ -11,6 +13,8 @@ import { removeCommand, parseRemoveOptions } from './remove.ts';
 import { runSync, parseSyncOptions } from './sync.ts';
 import { flushTelemetry } from './telemetry.ts';
 import { isRunningInAgent } from './detect-agent.ts';
+import { agents } from './agents.ts';
+import type { AgentType } from './types.ts';
 import { runUpdate } from './update.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -345,6 +349,9 @@ async function main(): Promise<void> {
     case 'upgrade':
       await runUpdate(restArgs);
       break;
+    case 'setup':
+      await runSetup();
+      break;
     case '--help':
     case '-h':
       showHelp();
@@ -357,6 +364,51 @@ async function main(): Promise<void> {
     default:
       console.log(`Unknown command: ${command}`);
       console.log(`Run ${BOLD}skills --help${RESET} for usage.`);
+  }
+}
+
+async function runSetup(): Promise<void> {
+  const home = homedir();
+  const hookableAgents = (Object.keys(agents) as AgentType[]).filter(
+    (a) => agents[a].hooksFile !== undefined
+  );
+
+  let configured = 0;
+  let skipped = 0;
+
+  for (const agentName of hookableAgents) {
+    const config = agents[agentName];
+
+    // Detect the agent by checking if its config dir root exists
+    const hooksFile = config.hooksFile!;
+    const configDirRoot = join(home, hooksFile.split('/')[0]!);
+    if (!existsSync(configDirRoot)) continue;
+
+    try {
+      const changed = await wireStopHook(agentName, { home });
+      if (changed) {
+        console.log(`  configured: ${config.displayName}`);
+        configured++;
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      console.error(
+        `  warning: could not configure ${config.displayName}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  if (configured + skipped === 0) {
+    console.log('No supported AI tools detected.');
+    console.log('Install Claude Code, Cursor, Codex, or GitHub Copilot and re-run skills setup.');
+    return;
+  }
+
+  if (configured > 0) {
+    console.log(`\nDone. ${configured} tool(s) configured, ${skipped} already set up.`);
+  } else {
+    console.log('\nAll tools already set up.');
   }
 }
 

@@ -6,6 +6,7 @@ import { agents, detectInstalledAgents } from './agents.ts';
 import { track } from './telemetry.ts';
 import { detectAgent } from './detect-agent.ts';
 import { removeSkillFromLock, getSkillFromLock } from './skill-lock.ts';
+import { removeUserPromptHook } from './hooks.ts';
 import type { AgentType } from './types.ts';
 import {
   getInstallPath,
@@ -223,6 +224,17 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
       const lockEntry = isGlobal ? await getSkillFromLock(skillName) : null;
       const effectiveSource = lockEntry?.source || 'local';
       const effectiveSourceType = lockEntry?.sourceType || 'local';
+
+      // Remove per-skill prompt hooks if we have the skill UUID (non-fatal)
+      if (lockEntry?.skillId) {
+        for (const agentKey of targetAgents) {
+          try {
+            await removeUserPromptHook({ skillId: lockEntry.skillId, agent: agentKey });
+          } catch {
+            // Hook removal is best-effort — never fail an uninstall
+          }
+        }
+      }
 
       if (isGlobal) {
         await removeSkillFromLock(skillName);
