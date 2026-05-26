@@ -370,9 +370,12 @@ export async function removeHookRef(
   scope: { global: true } | { projectPath: string }
 ): Promise<boolean> {
   const lock = await readSkillLock();
-  if (!lock.hookRefs) return true;
+  // No hookRefs entry means the skill was installed before ref-counting was introduced.
+  // Default to false (keep the hook) — a stale hook is safer than a premature removal,
+  // and `skills hooks repair` will clean up orphans on the next run.
+  if (!lock.hookRefs) return false;
   const ref = lock.hookRefs[skillRef];
-  if (!ref) return true;
+  if (!ref) return false;
 
   if ('global' in scope) {
     ref.globalInstall = false;

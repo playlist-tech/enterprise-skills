@@ -56,10 +56,10 @@ import {
 } from './telemetry.ts';
 import { detectAgent, getAgentType } from './detect-agent.ts';
 import { wireUserPromptHook } from './hooks.ts';
-import { addHookRef } from './skill-lock.ts';
 import { wellKnownProvider, type WellKnownSkill } from './providers/index.ts';
 import {
   addSkillToLock,
+  addHookRef,
   fetchSkillFolderHash,
   getGitHubToken,
   isPromptDismissed,
@@ -828,6 +828,7 @@ async function handleWellKnownSkills(
                 source: sourceIdentifier,
                 sourceType: 'well-known',
                 computedHash,
+                skillRef: `${sourceIdentifier}/${skill.installName}`,
               },
               cwd
             );
