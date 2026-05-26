@@ -8,7 +8,9 @@ export type { HookSchema };
 
 export interface HookWiringOptions {
   skillName: string;
-  skillId: string;
+  /** Stable identity key for dedup/removal — typically "owner/repo/skillName" for GitHub sources,
+   *  or just "skillName" for local/URL installs. Embedded in the hook command at wire time. */
+  skillRef: string;
   agent: AgentType;
   home?: string;
 }
@@ -65,23 +67,23 @@ export async function wireStopHook(
  * Called by `skills add` after installation. Returns true if a change was made.
  */
 export async function wireUserPromptHook(options: HookWiringOptions): Promise<boolean> {
-  const { skillName, skillId, agent: agentName } = options;
+  const { skillName, skillRef, agent: agentName } = options;
   const config = agents[agentName];
   if (!config.hooksFile || !config.promptEvent || !config.hookSchema) return false;
 
   const startCmdTemplate = getHookStartCmd();
   if (!startCmdTemplate) return false;
-  if (!startCmdTemplate.includes('{{skill_id}}')) return false;
+  if (!startCmdTemplate.includes('{{skill_name}}')) return false;
 
   const home = options.home ?? homedir();
   const hooksPath = join(home, config.hooksFile);
 
   const startCmd = startCmdTemplate
-    .replaceAll('{{skill_id}}', skillId)
+    .replaceAll('{{skill_ref}}', skillRef)
     .replaceAll('{{skill_name}}', skillName)
     .replaceAll('{{agent}}', config.name);
 
-  return writePromptHook(hooksPath, config.hookSchema, config.promptEvent, startCmd, skillId);
+  return writePromptHook(hooksPath, config.hookSchema, config.promptEvent, startCmd, skillRef);
 }
 
 /**
@@ -89,9 +91,9 @@ export async function wireUserPromptHook(options: HookWiringOptions): Promise<bo
  * Called by `skills remove`. Returns true if an entry was removed.
  */
 export async function removeUserPromptHook(
-  options: Pick<HookWiringOptions, 'skillId' | 'agent' | 'home'>
+  options: Pick<HookWiringOptions, 'skillRef' | 'agent' | 'home'>
 ): Promise<boolean> {
-  const { skillId, agent: agentName } = options;
+  const { skillRef, agent: agentName } = options;
   const config = agents[agentName];
   if (!config.hooksFile || !config.promptEvent || !config.hookSchema) return false;
 
@@ -110,7 +112,7 @@ export async function removeUserPromptHook(
   const hooks = settings['hooks'] as Record<string, unknown> | undefined;
   if (!hooks) return false;
 
-  const needle = skillId;
+  const needle = skillRef;
   const promptHooks = hooks[config.promptEvent];
   if (!Array.isArray(promptHooks)) return false;
 

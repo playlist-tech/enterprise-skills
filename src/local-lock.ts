@@ -33,8 +33,8 @@ export interface LocalSkillLockEntry {
    * computes the hash from actual file contents on disk.
    */
   computedHash: string;
-  /** Skill UUID from the registry — stored so project-scoped removes can unref prompt hooks */
-  skillId?: string;
+  /** Stable hook identity key (e.g. "owner/repo/skillName") — stored so project-scoped removes can unref prompt hooks */
+  skillRef?: string;
 }
 
 /**

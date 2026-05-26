@@ -1564,15 +1564,14 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       (a) => agents[a].promptEvent && agents[a].hooksFile
     );
     for (const skill of selectedSkills) {
-      if (!successfullyInstalledSkillNames.has(getSkillDisplayName(skill))) continue;
-      const skillId = (skill.metadata?.['skill_id'] ?? skill.metadata?.['id']) as
-        | string
-        | undefined;
-      if (!skillId) continue;
       const skillName = getSkillDisplayName(skill);
+      if (!successfullyInstalledSkillNames.has(skillName)) continue;
+      // Build a stable hook identity key: "owner/repo/skillName" for GitHub sources,
+      // falling back to just skillName for local/URL installs.
+      const skillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skillName}` : skillName;
       for (const agentName of targetAgents) {
         try {
-          await wireUserPromptHook({ skillName, skillId, agent: agentName });
+          await wireUserPromptHook({ skillName, skillRef, agent: agentName });
         } catch {
           // Hook wiring is best-effort — never fail an install
         }
@@ -1582,7 +1581,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       // a later uninstall from a different scope doesn't tear down the hook prematurely.
       if (hookStartCmdSet && hookCapableAgents.length > 0) {
         try {
-          await addHookRef(skillId, installGlobally ? { global: true } : { projectPath: cwd });
+          await addHookRef(skillRef, installGlobally ? { global: true } : { projectPath: cwd });
         } catch {
           // ref tracking is best-effort
         }
@@ -1670,9 +1669,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               if (hash) skillFolderHash = hash;
             }
 
-            const skillIdForLock = (skill.metadata?.['skill_id'] ?? skill.metadata?.['id']) as
-              | string
-              | undefined;
+            const lockSkillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skill.name}` : skill.name;
             await addSkillToLock(skill.name, {
               source: lockSource || normalizedSource,
               sourceType: parsed.type,
@@ -1681,7 +1678,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               skillPath: skillPathValue,
               skillFolderHash,
               pluginName: skill.pluginName,
-              ...(skillIdForLock && { skillId: skillIdForLock }),
+              skillRef: lockSkillRef,
             });
           } catch {
             // Don't fail installation if lock file update fails
@@ -1703,9 +1700,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 ? (skill as BlobSkill).snapshotHash
                 : await computeSkillFolderHash(skill.path);
             const skillPathValue = skillFiles[skill.name];
-            const localSkillId = (skill.metadata?.['skill_id'] ?? skill.metadata?.['id']) as
-              | string
-              | undefined;
+            const localSkillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skill.name}` : skill.name;
             await addSkillToLocalLock(
               skill.name,
               {
@@ -1714,7 +1709,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 sourceType: parsed.type,
                 ...(skillPathValue && { skillPath: skillPathValue }),
                 computedHash,
-                ...(localSkillId && { skillId: localSkillId }),
+                skillRef: localSkillRef,
               },
               cwd
             );

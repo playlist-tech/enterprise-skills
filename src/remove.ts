@@ -227,30 +227,36 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
       const effectiveSource = lockEntry?.source || 'local';
       const effectiveSourceType = lockEntry?.sourceType || 'local';
 
-      // Resolve skillId from global lock (global install) or local lock (project install)
-      let skillId: string | undefined = lockEntry?.skillId;
-      if (!skillId && !isGlobal) {
+      // Resolve skillRef from global lock (global install) or local lock (project install).
+      // Falls back to "source/skillName" derived on the fly, or just skillName.
+      let skillRef: string | undefined = lockEntry?.skillRef;
+      if (!skillRef && !isGlobal) {
         try {
           const localLock = await readLocalLock(cwd);
-          skillId = localLock.skills[skillName]?.skillId;
+          skillRef = localLock.skills[skillName]?.skillRef;
         } catch {
           // best-effort
         }
+      }
+      // Derive from source if still missing (skills installed before skillRef was tracked)
+      if (!skillRef) {
+        const src = lockEntry?.source;
+        skillRef = src ? `${src}/${skillName}` : skillName;
       }
 
       // Only unref / remove hooks when the skill is fully gone from this scope.
       // A partial --agent remove leaves the skill installed for other agents, so
       // the prompt hook should stay active.
-      if (skillId && !isStillUsed) {
+      if (!isStillUsed) {
         try {
           const shouldRemove = await removeHookRef(
-            skillId,
+            skillRef,
             isGlobal ? { global: true } : { projectPath: cwd }
           );
           if (shouldRemove) {
             for (const agentKey of targetAgents) {
               try {
-                await removeUserPromptHook({ skillId, agent: agentKey });
+                await removeUserPromptHook({ skillRef, agent: agentKey });
               } catch {
                 // Hook removal is best-effort — never fail an uninstall
               }

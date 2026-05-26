@@ -35,8 +35,8 @@ export interface SkillLockEntry {
   updatedAt: string;
   /** Name of the plugin this skill belongs to (if any) */
   pluginName?: string;
-  /** Skill UUID from the registry, stored at install time for hook unwiring */
-  skillId?: string;
+  /** Stable hook identity key (e.g. "owner/repo/skillName") stored at install time for hook unwiring */
+  skillRef?: string;
 }
 
 /**
@@ -68,7 +68,7 @@ export interface SkillLockFile {
   dismissed?: DismissedPrompts;
   /** Last selected agents for installation */
   lastSelectedAgents?: string[];
-  /** Ref-counts active installations keyed by skillId — drives hook lifecycle */
+  /** Ref-counts active installations keyed by skillRef — drives hook lifecycle */
   hookRefs?: Record<string, HookRef>;
 }
 
@@ -342,12 +342,12 @@ export async function saveSelectedAgents(agents: string[]): Promise<void> {
  * stay accurate across reinstalls.
  */
 export async function addHookRef(
-  skillId: string,
+  skillRef: string,
   scope: { global: true } | { projectPath: string }
 ): Promise<void> {
   const lock = await readSkillLock();
   if (!lock.hookRefs) lock.hookRefs = {};
-  const ref = lock.hookRefs[skillId] ?? { globalInstall: false, projectPaths: [] };
+  const ref = lock.hookRefs[skillRef] ?? { globalInstall: false, projectPaths: [] };
 
   if ('global' in scope) {
     ref.globalInstall = true;
@@ -357,7 +357,7 @@ export async function addHookRef(
     }
   }
 
-  lock.hookRefs[skillId] = ref;
+  lock.hookRefs[skillRef] = ref;
   await writeSkillLock(lock);
 }
 
@@ -366,12 +366,12 @@ export async function addHookRef(
  * Returns true if the hook should now be removed (no remaining refs).
  */
 export async function removeHookRef(
-  skillId: string,
+  skillRef: string,
   scope: { global: true } | { projectPath: string }
 ): Promise<boolean> {
   const lock = await readSkillLock();
   if (!lock.hookRefs) return true;
-  const ref = lock.hookRefs[skillId];
+  const ref = lock.hookRefs[skillRef];
   if (!ref) return true;
 
   if ('global' in scope) {
@@ -382,9 +382,9 @@ export async function removeHookRef(
 
   const shouldRemove = !ref.globalInstall && ref.projectPaths.length === 0;
   if (shouldRemove) {
-    delete lock.hookRefs[skillId];
+    delete lock.hookRefs[skillRef];
   } else {
-    lock.hookRefs[skillId] = ref;
+    lock.hookRefs[skillRef] = ref;
   }
 
   await writeSkillLock(lock);

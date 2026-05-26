@@ -139,7 +139,7 @@ describe('wireUserPromptHook', () => {
   beforeEach(() => {
     home = makeHome();
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
     delete process.env['SKILLS_HOOK_STOP_CMD'];
   });
 
@@ -152,28 +152,28 @@ describe('wireUserPromptHook', () => {
     delete process.env['SKILLS_HOOK_START_CMD'];
     const changed = await wireUserPromptHook({
       skillName: 'my-skill',
-      skillId: 'abc-123',
+      skillRef: 'owner/repo/my-skill',
       agent: 'claude-code',
       home,
     });
     expect(changed).toBe(false);
   });
 
-  it('returns false when SKILLS_HOOK_START_CMD does not contain {{skill_id}}', async () => {
+  it('returns false when SKILLS_HOOK_START_CMD does not contain {{skill_name}}', async () => {
     process.env['SKILLS_HOOK_START_CMD'] = 'my-tracker --agent {{agent}}';
     const changed = await wireUserPromptHook({
       skillName: 'my-skill',
-      skillId: 'abc-123',
+      skillRef: 'owner/repo/my-skill',
       agent: 'claude-code',
       home,
     });
     expect(changed).toBe(false);
   });
 
-  it('substitutes {{skill_id}}, {{skill_name}}, {{agent}} tokens', async () => {
+  it('substitutes {{skill_ref}}, {{skill_name}}, {{agent}} tokens', async () => {
     await wireUserPromptHook({
       skillName: 'pr-review',
-      skillId: 'skill-uuid-001',
+      skillRef: 'acme/skills/pr-review',
       agent: 'claude-code',
       home,
     });
@@ -185,7 +185,7 @@ describe('wireUserPromptHook', () => {
     const inner = (promptHooks[0] as Record<string, unknown>)['hooks'] as unknown[];
     const cmd = (inner[0] as Record<string, unknown>)['command'] as string;
 
-    expect(cmd).toContain('--skill-id skill-uuid-001');
+    expect(cmd).toContain('--skill-ref acme/skills/pr-review');
     expect(cmd).toContain('--agent claude-code');
     expect(cmd).toContain('--match-prompt /pr-review');
   });
@@ -193,7 +193,7 @@ describe('wireUserPromptHook', () => {
   it('uses flat schema for cursor', async () => {
     await wireUserPromptHook({
       skillName: 'pr-review',
-      skillId: 'skill-uuid-002',
+      skillRef: 'acme/skills/pr-review',
       agent: 'cursor',
       home,
     });
@@ -204,24 +204,24 @@ describe('wireUserPromptHook', () => {
     ] as unknown[];
     expect(promptHooks).toHaveLength(1);
     expect((promptHooks[0] as Record<string, unknown>)['command']).toContain(
-      '--skill-id skill-uuid-002'
+      '--skill-ref acme/skills/pr-review'
     );
   });
 
-  it('replaces existing entry for same skill-id on reinstall', async () => {
+  it('replaces existing entry for same skillRef on reinstall', async () => {
     const opts = {
       skillName: 'pr-review',
-      skillId: 'skill-uuid-003',
+      skillRef: 'acme/skills/pr-review',
       agent: 'claude-code' as const,
       home,
     };
 
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
     await wireUserPromptHook(opts);
 
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}} --extra-flag';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}} --extra-flag';
     await wireUserPromptHook(opts);
 
     const settings = readJson(join(home, '.claude', 'settings.json'));
@@ -233,19 +233,19 @@ describe('wireUserPromptHook', () => {
     expect((inner[0] as Record<string, unknown>)['command']).toContain('--extra-flag');
   });
 
-  it('keeps entries for different skill-ids when adding a second skill', async () => {
+  it('keeps entries for different skillRefs when adding a second skill', async () => {
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
 
     await wireUserPromptHook({
       skillName: 'skill-a',
-      skillId: 'id-aaa',
+      skillRef: 'acme/skills/skill-a',
       agent: 'claude-code',
       home,
     });
     await wireUserPromptHook({
       skillName: 'skill-b',
-      skillId: 'id-bbb',
+      skillRef: 'acme/skills/skill-b',
       agent: 'claude-code',
       home,
     });
@@ -266,7 +266,7 @@ describe('removeUserPromptHook', () => {
   beforeEach(() => {
     home = makeHome();
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
   });
 
   afterEach(() => {
@@ -277,18 +277,22 @@ describe('removeUserPromptHook', () => {
   it('removes the correct entry and leaves others intact', async () => {
     await wireUserPromptHook({
       skillName: 'skill-a',
-      skillId: 'id-aaa',
+      skillRef: 'acme/skills/skill-a',
       agent: 'claude-code',
       home,
     });
     await wireUserPromptHook({
       skillName: 'skill-b',
-      skillId: 'id-bbb',
+      skillRef: 'acme/skills/skill-b',
       agent: 'claude-code',
       home,
     });
 
-    const removed = await removeUserPromptHook({ skillId: 'id-aaa', agent: 'claude-code', home });
+    const removed = await removeUserPromptHook({
+      skillRef: 'acme/skills/skill-a',
+      agent: 'claude-code',
+      home,
+    });
     expect(removed).toBe(true);
 
     const settings = readJson(join(home, '.claude', 'settings.json'));
@@ -297,19 +301,19 @@ describe('removeUserPromptHook', () => {
     ] as unknown[];
     expect(promptHooks).toHaveLength(1);
     const inner = (promptHooks[0] as Record<string, unknown>)['hooks'] as unknown[];
-    expect((inner[0] as Record<string, unknown>)['command']).toContain('--skill-id id-bbb');
+    expect((inner[0] as Record<string, unknown>)['command']).toContain('acme/skills/skill-b');
   });
 
-  it('returns false when skill-id is not present', async () => {
+  it('returns false when skillRef is not present', async () => {
     await wireUserPromptHook({
       skillName: 'skill-a',
-      skillId: 'id-aaa',
+      skillRef: 'acme/skills/skill-a',
       agent: 'claude-code',
       home,
     });
 
     const removed = await removeUserPromptHook({
-      skillId: 'nonexistent-id',
+      skillRef: 'acme/skills/nonexistent',
       agent: 'claude-code',
       home,
     });
@@ -317,18 +321,26 @@ describe('removeUserPromptHook', () => {
   });
 
   it('returns false when hooks file does not exist', async () => {
-    const removed = await removeUserPromptHook({ skillId: 'any-id', agent: 'claude-code', home });
+    const removed = await removeUserPromptHook({
+      skillRef: 'acme/skills/any',
+      agent: 'claude-code',
+      home,
+    });
     expect(removed).toBe(false);
   });
 
   it('removes flat-schema entry for cursor', async () => {
     await wireUserPromptHook({
       skillName: 'my-skill',
-      skillId: 'flat-id-001',
+      skillRef: 'acme/skills/my-skill',
       agent: 'cursor',
       home,
     });
-    const removed = await removeUserPromptHook({ skillId: 'flat-id-001', agent: 'cursor', home });
+    const removed = await removeUserPromptHook({
+      skillRef: 'acme/skills/my-skill',
+      agent: 'cursor',
+      home,
+    });
     expect(removed).toBe(true);
 
     const settings = readJson(join(home, '.cursor', 'hooks.json'));
