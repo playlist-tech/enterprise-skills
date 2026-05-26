@@ -1601,6 +1601,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             agents: targetAgents.join(','),
             ...(installGlobally && { global: '1' }),
             skillFiles: JSON.stringify(skillFiles),
+            sourceType: parsed.type,
           });
         }
       } else {
@@ -1612,6 +1613,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           agents: targetAgents.join(','),
           ...(installGlobally && { global: '1' }),
           skillFiles: JSON.stringify(skillFiles),
+          sourceType: parsed.type,
         });
       }
     }
