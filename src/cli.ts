@@ -418,6 +418,9 @@ async function runSetup(): Promise<void> {
 
   if (configured > 0) {
     console.log(`\nDone. ${configured} tool(s) configured, ${skipped} already set up.`);
+    console.log(
+      'Hooks were written as part of setup — you may need to trust them and restart your AI tools before they take effect.'
+    );
   } else {
     console.log('\nAll tools already set up.');
   }
