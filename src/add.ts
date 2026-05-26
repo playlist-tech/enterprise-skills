@@ -1557,12 +1557,14 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     spinner.stop('Installation complete');
 
     // Wire per-skill UserPromptSubmit hooks for installed skills (non-fatal)
+    let hooksWired = false;
     for (const skill of selectedSkills) {
       const skillName = getSkillDisplayName(skill);
       const skillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skillName}` : skillName;
       for (const agentName of targetAgents) {
         try {
-          await wireUserPromptHook({ skillName, skillRef, agent: agentName });
+          const changed = await wireUserPromptHook({ skillName, skillRef, agent: agentName });
+          if (changed) hooksWired = true;
         } catch {
           // Hook wiring is best-effort — never fail an install
         }
@@ -1577,6 +1579,11 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       } catch {
         // best-effort
       }
+    }
+    if (hooksWired) {
+      console.log(
+        'Hooks were written as part of install — you may need to trust them and restart your AI tools before they take effect.'
+      );
     }
 
     console.log();
