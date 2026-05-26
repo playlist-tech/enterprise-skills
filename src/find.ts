@@ -39,7 +39,6 @@ export async function searchSkillsAPI(query: string): Promise<SearchSkill[]> {
     const data = (await res.json()) as {
       skills: Array<{
         id: string;
-        skillId?: string;
         name: string;
         installs: number;
         source: string;
@@ -49,7 +48,7 @@ export async function searchSkillsAPI(query: string): Promise<SearchSkill[]> {
     return data.skills
       .map((skill) => ({
         name: sanitizeMetadata(skill.name),
-        slug: sanitizeMetadata(skill.skillId || skill.id),
+        slug: sanitizeMetadata(skill.id),
         source: sanitizeMetadata(skill.source || ''),
         installs: skill.installs,
       }))
