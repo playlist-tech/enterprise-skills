@@ -5,7 +5,7 @@ import { basename, join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { runAdd, parseAddOptions, initTelemetry } from './add.ts';
-import { wireStopHook, repairHooks } from './hooks.ts';
+import { wireStopHook, isHookSetupDone, repairHooks } from './hooks.ts';
 import { runFind } from './find.ts';
 import { runInstallFromLock } from './install.ts';
 import { runList } from './list.ts';
@@ -145,7 +145,6 @@ ${BOLD}Project:${RESET}
   experimental_install Restore skills from skills-lock.json
   init [name]          Initialize a skill (creates <name>/SKILL.md or ./SKILL.md)
   experimental_sync    Sync skills from node_modules into agent directories
-  setup                Wire stop/fail hooks into detected agent config files
   hooks repair         Repair missing and remove orphaned prompt hooks
 
 ${BOLD}Add Options:${RESET}
@@ -399,12 +398,6 @@ async function main(): Promise<void> {
 }
 
 async function runSetup(): Promise<void> {
-  if (!process.env['SKILLS_HOOK_STOP_CMD']) {
-    console.log('SKILLS_HOOK_STOP_CMD is not set — hook wiring is disabled.');
-    console.log('Set this environment variable and re-run skills setup.');
-    return;
-  }
-
   const home = homedir();
   const hookableAgents = (Object.keys(agents) as AgentType[]).filter(
     (a) => agents[a].hooksFile !== undefined
@@ -453,7 +446,6 @@ async function runHooksRepair(): Promise<void> {
   const home = homedir();
   const cwd = process.cwd();
 
-  // Include CWD as a project path if it has a skills-lock.json.
   // Note: SKILLS_HOOK_START_CMD being unset only disables wiring — orphan
   // removal runs regardless so stale hooks are always cleaned up.
   const projectPaths: string[] = [];

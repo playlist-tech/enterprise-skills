@@ -224,16 +224,16 @@ function writePromptHook(
   schema: HookSchema,
   event: string,
   command: string,
-  skillId: string
+  skillRef: string
 ): boolean {
   const settings = readSettings(hooksPath, schema);
   const hooks = getOrCreateHooks(settings);
   const entries = getEventEntries(hooks, event);
 
-  const needle = skillId;
+  const needle = skillRef;
   const others = entries.filter((e) => !entryContainsCommand(e, needle, schema));
 
-  // If there's an existing entry for this skill-id that already has the right command, no-op.
+  // If there's an existing entry for this skill that already has the right command, no-op.
   if (others.length < entries.length) {
     const existing = entries.find((e) => entryContainsCommand(e, needle, schema));
     if (existing) {
@@ -255,8 +255,11 @@ function writePromptHook(
 function entryContainsCommand(entry: unknown, needle: string, schema: HookSchema): boolean {
   if (typeof entry !== 'object' || entry === null) return false;
   const m = entry as Record<string, unknown>;
+  // Anchor on --skill-ref <value> so a short ref like "foo" doesn't substring-match "foobar"
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`--skill-ref\\s+${escaped}(?:\\s|$)`);
   if (schema === 'flat') {
-    return typeof m['command'] === 'string' && m['command'].includes(needle);
+    return typeof m['command'] === 'string' && pattern.test(m['command']);
   }
   const inner = m['hooks'];
   if (!Array.isArray(inner)) return false;
@@ -265,7 +268,7 @@ function entryContainsCommand(entry: unknown, needle: string, schema: HookSchema
       typeof h === 'object' &&
       h !== null &&
       typeof (h as Record<string, unknown>)['command'] === 'string' &&
-      ((h as Record<string, unknown>)['command'] as string).includes(needle)
+      pattern.test((h as Record<string, unknown>)['command'] as string)
   );
 }
 

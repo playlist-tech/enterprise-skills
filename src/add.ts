@@ -827,6 +827,7 @@ async function handleWellKnownSkills(
                 source: sourceIdentifier,
                 sourceType: 'well-known',
                 computedHash,
+                skillRef: `${sourceIdentifier}/${skill.installName}`,
               },
               cwd
             );
@@ -1555,19 +1556,9 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     spinner.stop('Installation complete');
 
-    // Wire per-skill UserPromptSubmit hooks — only for skills with at least one successful install
-    const successfullyInstalledSkillNames = new Set(
-      results.filter((r) => r.success).map((r) => r.skill)
-    );
-    const hookStartCmdSet = !!process.env['SKILLS_HOOK_START_CMD']?.trim();
-    const hookCapableAgents = targetAgents.filter(
-      (a) => agents[a].promptEvent && agents[a].hooksFile
-    );
+    // Wire per-skill UserPromptSubmit hooks for installed skills (non-fatal)
     for (const skill of selectedSkills) {
       const skillName = getSkillDisplayName(skill);
-      if (!successfullyInstalledSkillNames.has(skillName)) continue;
-      // Build a stable hook identity key: "owner/repo/skillName" for GitHub sources,
-      // falling back to just skillName for local/URL installs.
       const skillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skillName}` : skillName;
       for (const agentName of targetAgents) {
         try {
@@ -1576,15 +1567,15 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           // Hook wiring is best-effort — never fail an install
         }
       }
-      // Record the ref whenever hook wiring is enabled for this install, regardless
-      // of whether this specific call was a no-op (idempotent reinstall). This ensures
-      // a later uninstall from a different scope doesn't tear down the hook prematurely.
-      if (hookStartCmdSet && hookCapableAgents.length > 0) {
-        try {
-          await addHookRef(skillRef, installGlobally ? { global: true } : { projectPath: cwd });
-        } catch {
-          // ref tracking is best-effort
+      // Record ref so `skills remove` knows when it's safe to tear down the hook.
+      try {
+        if (installGlobally) {
+          await addHookRef(skillRef, { global: true });
+        } else {
+          await addHookRef(skillRef, { projectPath: process.cwd() });
         }
+      } catch {
+        // best-effort
       }
     }
 
