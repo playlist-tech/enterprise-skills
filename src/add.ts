@@ -38,9 +38,11 @@ import {
   type PartnerAudit,
 } from './telemetry.ts';
 import { detectAgent, getAgentType } from './detect-agent.ts';
+import { wireUserPromptHook } from './hooks.ts';
 import { wellKnownProvider, type WellKnownSkill } from './providers/index.ts';
 import {
   addSkillToLock,
+  addHookRef,
   fetchSkillFolderHash,
   getGitHubToken,
   isPromptDismissed,
@@ -825,6 +827,7 @@ async function handleWellKnownSkills(
                 source: sourceIdentifier,
                 sourceType: 'well-known',
                 computedHash,
+                skillRef: `${sourceIdentifier}/${skill.installName}`,
               },
               cwd
             );
@@ -1553,6 +1556,29 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     spinner.stop('Installation complete');
 
+    // Wire per-skill UserPromptSubmit hooks for installed skills (non-fatal)
+    for (const skill of selectedSkills) {
+      const skillName = getSkillDisplayName(skill);
+      const skillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skillName}` : skillName;
+      for (const agentName of targetAgents) {
+        try {
+          await wireUserPromptHook({ skillName, skillRef, agent: agentName });
+        } catch {
+          // Hook wiring is best-effort — never fail an install
+        }
+      }
+      // Record ref so `skills remove` knows when it's safe to tear down the hook.
+      try {
+        if (installGlobally) {
+          await addHookRef(skillRef, { global: true });
+        } else {
+          await addHookRef(skillRef, { projectPath: process.cwd() });
+        }
+      } catch {
+        // best-effort
+      }
+    }
+
     console.log();
     const successful = results.filter((r) => r.success);
     const failed = results.filter((r) => !r.success);
@@ -1634,6 +1660,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               if (hash) skillFolderHash = hash;
             }
 
+            const lockSkillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skill.name}` : skill.name;
             await addSkillToLock(skill.name, {
               source: lockSource || normalizedSource,
               sourceType: parsed.type,
@@ -1642,6 +1669,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               skillPath: skillPathValue,
               skillFolderHash,
               pluginName: skill.pluginName,
+              skillRef: lockSkillRef,
             });
           } catch {
             // Don't fail installation if lock file update fails
@@ -1663,6 +1691,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 ? (skill as BlobSkill).snapshotHash
                 : await computeSkillFolderHash(skill.path);
             const skillPathValue = skillFiles[skill.name];
+            const localSkillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skill.name}` : skill.name;
             await addSkillToLocalLock(
               skill.name,
               {
@@ -1671,6 +1700,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 sourceType: parsed.type,
                 ...(skillPathValue && { skillPath: skillPathValue }),
                 computedHash,
+                skillRef: localSkillRef,
               },
               cwd
             );
