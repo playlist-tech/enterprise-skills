@@ -5,7 +5,7 @@ import { basename, join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { runAdd, parseAddOptions, initTelemetry } from './add.ts';
-import { wireStopHook, isHookSetupDone } from './hooks.ts';
+import { wireStopHook, isHookSetupDone, repairHooks } from './hooks.ts';
 import { runFind } from './find.ts';
 import { runInstallFromLock } from './install.ts';
 import { runList } from './list.ts';
@@ -126,6 +126,7 @@ ${BOLD}Project:${RESET}
   experimental_install Restore skills from skills-lock.json
   init [name]          Initialize a skill (creates <name>/SKILL.md or ./SKILL.md)
   experimental_sync    Sync skills from node_modules into agent directories
+  hooks repair         Repair missing and remove orphaned prompt hooks
 
 ${BOLD}Add Options:${RESET}
   -g, --global           Install skill globally (user-level) instead of project-level
@@ -352,6 +353,16 @@ async function main(): Promise<void> {
     case 'setup':
       await runSetup();
       break;
+    case 'hooks': {
+      const subcommand = restArgs[0];
+      if (subcommand === 'repair') {
+        await runHooksRepair();
+      } else {
+        console.log(`Unknown hooks subcommand: ${subcommand ?? '(none)'}`);
+        console.log(`Available: ${BOLD}repair${RESET}`);
+      }
+      break;
+    }
     case '--help':
     case '-h':
       showHelp();
@@ -410,6 +421,37 @@ async function runSetup(): Promise<void> {
   } else {
     console.log('\nAll tools already set up.');
   }
+}
+
+async function runHooksRepair(): Promise<void> {
+  const home = homedir();
+  const cwd = process.cwd();
+
+  // Note: SKILLS_HOOK_START_CMD being unset only disables wiring — orphan
+  // removal runs regardless so stale hooks are always cleaned up.
+  const projectPaths: string[] = [];
+  if (existsSync(join(cwd, 'skills-lock.json'))) {
+    projectPaths.push(cwd);
+  }
+
+  console.log('Repairing hooks...');
+  const result = await repairHooks({ home, projectPaths });
+
+  if (result.wired === 0 && result.removed === 0) {
+    console.log('All hooks are already correct — nothing to do.');
+    return;
+  }
+
+  if (result.wired > 0) {
+    console.log(`  wired: ${result.wired} missing hook(s)`);
+  }
+  if (result.removed > 0) {
+    console.log(`  removed: ${result.removed} orphaned hook(s)`);
+  }
+  if (result.agentsRepaired.length > 0) {
+    console.log(`  agents updated: ${result.agentsRepaired.join(', ')}`);
+  }
+  console.log('\nDone.');
 }
 
 main().finally(() => flushTelemetry().then(() => process.exit(0)));

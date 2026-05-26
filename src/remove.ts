@@ -5,8 +5,9 @@ import { join } from 'path';
 import { agents, detectInstalledAgents } from './agents.ts';
 import { track } from './telemetry.ts';
 import { detectAgent } from './detect-agent.ts';
-import { removeSkillFromLock, getSkillFromLock } from './skill-lock.ts';
+import { removeSkillFromLock, getSkillFromLock, removeHookRef } from './skill-lock.ts';
 import { removeUserPromptHook } from './hooks.ts';
+import { readLocalLock } from './local-lock.ts';
 import type { AgentType } from './types.ts';
 import {
   getInstallPath,
@@ -225,14 +226,39 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
       const effectiveSource = lockEntry?.source || 'local';
       const effectiveSourceType = lockEntry?.sourceType || 'local';
 
-      // Remove per-skill prompt hooks if we have the skill UUID (non-fatal)
-      if (lockEntry?.skillId) {
-        for (const agentKey of targetAgents) {
-          try {
-            await removeUserPromptHook({ skillId: lockEntry.skillId, agent: agentKey });
-          } catch {
-            // Hook removal is best-effort — never fail an uninstall
+      // Resolve skillRef from global lock (global install) or local lock (project install).
+      let skillRef: string | undefined = lockEntry?.skillRef;
+      if (!skillRef && !isGlobal) {
+        try {
+          const localLock = await readLocalLock(cwd);
+          skillRef = localLock.skills[skillName]?.skillRef;
+        } catch {
+          // best-effort
+        }
+      }
+      if (!skillRef) {
+        const src = lockEntry?.source;
+        skillRef = src ? `${src}/${skillName}` : skillName;
+      }
+
+      // Only unref / remove hooks when the skill is fully gone from this scope.
+      if (!isStillUsed) {
+        try {
+          const shouldRemove = await removeHookRef(
+            skillRef,
+            isGlobal ? { global: true } : { projectPath: cwd }
+          );
+          if (shouldRemove) {
+            for (const agentKey of targetAgents) {
+              try {
+                await removeUserPromptHook({ skillRef, agent: agentKey });
+              } catch {
+                // Hook removal is best-effort — never fail an uninstall
+              }
+            }
           }
+        } catch {
+          // ref tracking is best-effort
         }
       }
 

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import {
@@ -7,12 +7,8 @@ import {
   wireUserPromptHook,
   removeUserPromptHook,
   isHookSetupDone,
+  repairHooks,
 } from './hooks.ts';
-
-// @vercel/detect-agent is mocked so tests don't depend on actual env vars
-vi.mock('@vercel/detect-agent', () => ({
-  determineAgent: vi.fn(() => ({ isAgent: true, agent: { name: 'claude-code' } })),
-}));
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -87,6 +83,23 @@ describe('wireStopHook', () => {
     );
   });
 
+  it('writes nested stop + StopFailure hooks for claude-code', async () => {
+    const changed = await wireStopHook('claude-code', { home });
+    expect(changed).toBe(true);
+
+    const settings = readJson(join(home, '.claude', 'settings.json'));
+    const hooks = settings['hooks'] as Record<string, unknown>;
+    expect(hooks['Stop'] as unknown[]).toHaveLength(1);
+    expect(((hooks['Stop'] as unknown[])[0] as Record<string, unknown>)['hooks']).toBeDefined();
+    expect(hooks['StopFailure'] as unknown[]).toHaveLength(1);
+    const failInner = ((hooks['StopFailure'] as unknown[])[0] as Record<string, unknown>)[
+      'hooks'
+    ] as unknown[];
+    expect((failInner[0] as Record<string, unknown>)['command']).toBe(
+      'playlist-skills track stop --succeeded=false'
+    );
+  });
+
   it('is idempotent — second call returns false and does not duplicate entries', async () => {
     await wireStopHook('claude-code', { home });
     const changed = await wireStopHook('claude-code', { home });
@@ -127,7 +140,7 @@ describe('wireUserPromptHook', () => {
   beforeEach(() => {
     home = makeHome();
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
     delete process.env['SKILLS_HOOK_STOP_CMD'];
   });
 
@@ -140,17 +153,28 @@ describe('wireUserPromptHook', () => {
     delete process.env['SKILLS_HOOK_START_CMD'];
     const changed = await wireUserPromptHook({
       skillName: 'my-skill',
-      skillId: 'abc-123',
+      skillRef: 'owner/repo/my-skill',
       agent: 'claude-code',
       home,
     });
     expect(changed).toBe(false);
   });
 
-  it('substitutes {{skill_id}}, {{skill_name}}, {{agent}} tokens', async () => {
+  it('returns false when SKILLS_HOOK_START_CMD does not contain {{skill_name}}', async () => {
+    process.env['SKILLS_HOOK_START_CMD'] = 'my-tracker --agent {{agent}}';
+    const changed = await wireUserPromptHook({
+      skillName: 'my-skill',
+      skillRef: 'owner/repo/my-skill',
+      agent: 'claude-code',
+      home,
+    });
+    expect(changed).toBe(false);
+  });
+
+  it('substitutes {{skill_ref}}, {{skill_name}}, {{agent}} tokens', async () => {
     await wireUserPromptHook({
       skillName: 'pr-review',
-      skillId: 'skill-uuid-001',
+      skillRef: 'acme/skills/pr-review',
       agent: 'claude-code',
       home,
     });
@@ -162,7 +186,7 @@ describe('wireUserPromptHook', () => {
     const inner = (promptHooks[0] as Record<string, unknown>)['hooks'] as unknown[];
     const cmd = (inner[0] as Record<string, unknown>)['command'] as string;
 
-    expect(cmd).toContain('--skill-id skill-uuid-001');
+    expect(cmd).toContain('--skill-ref acme/skills/pr-review');
     expect(cmd).toContain('--agent claude-code');
     expect(cmd).toContain('--match-prompt /pr-review');
   });
@@ -170,7 +194,7 @@ describe('wireUserPromptHook', () => {
   it('uses flat schema for cursor', async () => {
     await wireUserPromptHook({
       skillName: 'pr-review',
-      skillId: 'skill-uuid-002',
+      skillRef: 'acme/skills/pr-review',
       agent: 'cursor',
       home,
     });
@@ -181,24 +205,24 @@ describe('wireUserPromptHook', () => {
     ] as unknown[];
     expect(promptHooks).toHaveLength(1);
     expect((promptHooks[0] as Record<string, unknown>)['command']).toContain(
-      '--skill-id skill-uuid-002'
+      '--skill-ref acme/skills/pr-review'
     );
   });
 
-  it('replaces existing entry for same skill-id on reinstall', async () => {
+  it('replaces existing entry for same skillRef on reinstall', async () => {
     const opts = {
       skillName: 'pr-review',
-      skillId: 'skill-uuid-003',
+      skillRef: 'acme/skills/pr-review',
       agent: 'claude-code' as const,
       home,
     };
 
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
     await wireUserPromptHook(opts);
 
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}} --extra-flag';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}} --extra-flag';
     await wireUserPromptHook(opts);
 
     const settings = readJson(join(home, '.claude', 'settings.json'));
@@ -210,19 +234,19 @@ describe('wireUserPromptHook', () => {
     expect((inner[0] as Record<string, unknown>)['command']).toContain('--extra-flag');
   });
 
-  it('keeps entries for different skill-ids when adding a second skill', async () => {
+  it('keeps entries for different skillRefs when adding a second skill', async () => {
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
 
     await wireUserPromptHook({
       skillName: 'skill-a',
-      skillId: 'id-aaa',
+      skillRef: 'acme/skills/skill-a',
       agent: 'claude-code',
       home,
     });
     await wireUserPromptHook({
       skillName: 'skill-b',
-      skillId: 'id-bbb',
+      skillRef: 'acme/skills/skill-b',
       agent: 'claude-code',
       home,
     });
@@ -243,7 +267,7 @@ describe('removeUserPromptHook', () => {
   beforeEach(() => {
     home = makeHome();
     process.env['SKILLS_HOOK_START_CMD'] =
-      'playlist-skills track start --skill-id {{skill_id}} --agent {{agent}} --match-prompt /{{skill_name}}';
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
   });
 
   afterEach(() => {
@@ -254,18 +278,22 @@ describe('removeUserPromptHook', () => {
   it('removes the correct entry and leaves others intact', async () => {
     await wireUserPromptHook({
       skillName: 'skill-a',
-      skillId: 'id-aaa',
+      skillRef: 'acme/skills/skill-a',
       agent: 'claude-code',
       home,
     });
     await wireUserPromptHook({
       skillName: 'skill-b',
-      skillId: 'id-bbb',
+      skillRef: 'acme/skills/skill-b',
       agent: 'claude-code',
       home,
     });
 
-    const removed = await removeUserPromptHook({ skillId: 'id-aaa', agent: 'claude-code', home });
+    const removed = await removeUserPromptHook({
+      skillRef: 'acme/skills/skill-a',
+      agent: 'claude-code',
+      home,
+    });
     expect(removed).toBe(true);
 
     const settings = readJson(join(home, '.claude', 'settings.json'));
@@ -274,19 +302,19 @@ describe('removeUserPromptHook', () => {
     ] as unknown[];
     expect(promptHooks).toHaveLength(1);
     const inner = (promptHooks[0] as Record<string, unknown>)['hooks'] as unknown[];
-    expect((inner[0] as Record<string, unknown>)['command']).toContain('--skill-id id-bbb');
+    expect((inner[0] as Record<string, unknown>)['command']).toContain('acme/skills/skill-b');
   });
 
-  it('returns false when skill-id is not present', async () => {
+  it('returns false when skillRef is not present', async () => {
     await wireUserPromptHook({
       skillName: 'skill-a',
-      skillId: 'id-aaa',
+      skillRef: 'acme/skills/skill-a',
       agent: 'claude-code',
       home,
     });
 
     const removed = await removeUserPromptHook({
-      skillId: 'nonexistent-id',
+      skillRef: 'acme/skills/nonexistent',
       agent: 'claude-code',
       home,
     });
@@ -294,18 +322,26 @@ describe('removeUserPromptHook', () => {
   });
 
   it('returns false when hooks file does not exist', async () => {
-    const removed = await removeUserPromptHook({ skillId: 'any-id', agent: 'claude-code', home });
+    const removed = await removeUserPromptHook({
+      skillRef: 'acme/skills/any',
+      agent: 'claude-code',
+      home,
+    });
     expect(removed).toBe(false);
   });
 
   it('removes flat-schema entry for cursor', async () => {
     await wireUserPromptHook({
       skillName: 'my-skill',
-      skillId: 'flat-id-001',
+      skillRef: 'acme/skills/my-skill',
       agent: 'cursor',
       home,
     });
-    const removed = await removeUserPromptHook({ skillId: 'flat-id-001', agent: 'cursor', home });
+    const removed = await removeUserPromptHook({
+      skillRef: 'acme/skills/my-skill',
+      agent: 'cursor',
+      home,
+    });
     expect(removed).toBe(true);
 
     const settings = readJson(join(home, '.cursor', 'hooks.json'));
@@ -313,6 +349,220 @@ describe('removeUserPromptHook', () => {
       'beforeSubmitPrompt'
     ] as unknown[];
     expect(promptHooks).toHaveLength(0);
+  });
+});
+
+// ─── repairHooks ──────────────────────────────────────────────────────────
+
+describe('repairHooks', () => {
+  let home: string;
+  let xdgStateDir: string;
+
+  function writeGlobalLock(skills: Record<string, unknown>): void {
+    const lockDir = join(xdgStateDir, 'skills');
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(
+      join(lockDir, '.skill-lock.json'),
+      JSON.stringify({ version: 3, skills }),
+      'utf-8'
+    );
+  }
+
+  beforeEach(() => {
+    home = makeHome();
+    xdgStateDir = makeHome();
+    process.env['XDG_STATE_HOME'] = xdgStateDir;
+    process.env['SKILLS_HOOK_START_CMD'] =
+      'playlist-skills track start --skill-ref {{skill_ref}} --agent {{agent}} --match-prompt /{{skill_name}}';
+  });
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(xdgStateDir, { recursive: true, force: true });
+    delete process.env['XDG_STATE_HOME'];
+    delete process.env['SKILLS_HOOK_START_CMD'];
+  });
+
+  it('returns zero counts when no skills are installed and no agent config dirs exist', async () => {
+    writeGlobalLock({});
+    const result = await repairHooks({ home });
+    expect(result).toEqual({ wired: 0, removed: 0, agentsRepaired: [] });
+  });
+
+  it('skips agents whose config dir does not exist', async () => {
+    writeGlobalLock({
+      'my-skill': {
+        source: 'acme/skills',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/acme/skills',
+        skillFolderHash: 'abc123',
+        installedAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        skillRef: 'acme/skills/my-skill',
+      },
+    });
+    // Deliberately do NOT create .claude or any other agent config dir
+    const result = await repairHooks({ home });
+    expect(result.wired).toBe(0);
+    expect(result.removed).toBe(0);
+    expect(result.agentsRepaired).toHaveLength(0);
+  });
+
+  it('wires a missing hook for a globally installed skill', async () => {
+    writeGlobalLock({
+      'my-skill': {
+        source: 'acme/skills',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/acme/skills',
+        skillFolderHash: 'abc123',
+        installedAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        skillRef: 'acme/skills/my-skill',
+      },
+    });
+    mkdirSync(join(home, '.claude'), { recursive: true });
+
+    const result = await repairHooks({ home });
+
+    expect(result.wired).toBeGreaterThanOrEqual(1);
+    expect(result.agentsRepaired).toContain('Claude Code');
+
+    const settings = readJson(join(home, '.claude', 'settings.json'));
+    const promptHooks = (settings['hooks'] as Record<string, unknown>)[
+      'UserPromptSubmit'
+    ] as unknown[];
+    expect(promptHooks).toHaveLength(1);
+    const inner = (promptHooks[0] as Record<string, unknown>)['hooks'] as unknown[];
+    expect((inner[0] as Record<string, unknown>)['command']).toContain(
+      '--skill-ref acme/skills/my-skill'
+    );
+  });
+
+  it('removes an orphaned hook whose skillRef is no longer in any lock', async () => {
+    mkdirSync(join(home, '.claude'), { recursive: true });
+
+    const orphanCmd =
+      'playlist-skills track start --skill-ref acme/skills/ghost-skill --agent claude-code --match-prompt /ghost-skill';
+    const settingsPath = join(home, '.claude', 'settings.json');
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [{ hooks: [{ type: 'command', command: orphanCmd, timeout: 5 }] }],
+        },
+      }),
+      'utf-8'
+    );
+
+    writeGlobalLock({});
+
+    const result = await repairHooks({ home });
+
+    expect(result.removed).toBe(1);
+    expect(result.agentsRepaired).toContain('Claude Code');
+
+    const settings = readJson(settingsPath);
+    const promptHooks = (settings['hooks'] as Record<string, unknown>)[
+      'UserPromptSubmit'
+    ] as unknown[];
+    expect(promptHooks).toHaveLength(0);
+  });
+
+  it('is idempotent — calling repair twice does not duplicate hook entries', async () => {
+    writeGlobalLock({
+      'my-skill': {
+        source: 'acme/skills',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/acme/skills',
+        skillFolderHash: 'abc123',
+        installedAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        skillRef: 'acme/skills/my-skill',
+      },
+    });
+    mkdirSync(join(home, '.claude'), { recursive: true });
+
+    const first = await repairHooks({ home });
+    const second = await repairHooks({ home });
+
+    expect(first.wired).toBe(1);
+    expect(second.wired).toBe(0);
+    expect(second.removed).toBe(0);
+
+    const settings = readJson(join(home, '.claude', 'settings.json'));
+    const promptHooks = (settings['hooks'] as Record<string, unknown>)[
+      'UserPromptSubmit'
+    ] as unknown[];
+    expect(promptHooks).toHaveLength(1);
+  });
+
+  it('rebuilds hookRefs in the global lock after repair', async () => {
+    writeGlobalLock({
+      'my-skill': {
+        source: 'acme/skills',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/acme/skills',
+        skillFolderHash: 'abc123',
+        installedAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        skillRef: 'acme/skills/my-skill',
+      },
+    });
+    mkdirSync(join(home, '.claude'), { recursive: true });
+
+    await repairHooks({ home });
+
+    const lockPath = join(xdgStateDir, 'skills', '.skill-lock.json');
+    const lock = JSON.parse(readFileSync(lockPath, 'utf-8'));
+    expect(lock.hookRefs?.['acme/skills/my-skill']).toEqual({
+      globalInstall: true,
+      projectPaths: [],
+    });
+  });
+
+  it('wires missing and removes orphaned in a single run', async () => {
+    mkdirSync(join(home, '.claude'), { recursive: true });
+
+    const orphanCmd =
+      'playlist-skills track start --skill-ref acme/skills/old-skill --agent claude-code --match-prompt /old-skill';
+    const settingsPath = join(home, '.claude', 'settings.json');
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [{ hooks: [{ type: 'command', command: orphanCmd, timeout: 5 }] }],
+        },
+      }),
+      'utf-8'
+    );
+
+    writeGlobalLock({
+      'new-skill': {
+        source: 'acme/skills',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/acme/skills',
+        skillFolderHash: 'def456',
+        installedAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        skillRef: 'acme/skills/new-skill',
+      },
+    });
+
+    const result = await repairHooks({ home });
+
+    expect(result.wired).toBe(1);
+    expect(result.removed).toBe(1);
+    expect(result.agentsRepaired).toContain('Claude Code');
+
+    const settings = readJson(settingsPath);
+    const promptHooks = (settings['hooks'] as Record<string, unknown>)[
+      'UserPromptSubmit'
+    ] as unknown[];
+    expect(promptHooks).toHaveLength(1);
+    const inner = (promptHooks[0] as Record<string, unknown>)['hooks'] as unknown[];
+    const cmd = (inner[0] as Record<string, unknown>)['command'] as string;
+    expect(cmd).toContain('--skill-ref acme/skills/new-skill');
+    expect(cmd).not.toContain('old-skill');
   });
 });
 
