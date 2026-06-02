@@ -149,13 +149,15 @@ export async function fetchAuditData(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(`${AUDIT_URL}?${params.toString()}`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) return null;
-    return (await response.json()) as AuditResponse;
+    try {
+      const response = await fetch(`${AUDIT_URL}?${params.toString()}`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) return null;
+      return (await response.json()) as AuditResponse;
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch {
     return null;
   }
