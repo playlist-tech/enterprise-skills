@@ -1,11 +1,10 @@
 /**
  * Tests for the lazy auth fallback in `fetchRepoTree`.
  *
- * The key behavior under test: a token resolver is invoked ONLY after
- * GitHub returns a rate-limit response (403 + X-RateLimit-Remaining: 0).
- * On a successful unauth call, or on a non-rate-limit 403, the resolver
- * must not be called. This is what keeps `gh auth token` from running
- * during every install. See issue #523.
+ * The token resolver is invoked only when the unauthenticated pass fails to
+ * return a tree. On a successful unauth call the resolver must not be called —
+ * this is what keeps `gh auth token` from running during every install for
+ * public repos. See issues #523 and #1331.
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
@@ -91,19 +90,57 @@ describe('fetchRepoTree lazy auth fallback', () => {
     );
   });
 
-  it('does not invoke the token resolver on a non-rate-limit 403', async () => {
-    // A 403 for a private repo (permission denied) is not retryable.
-    // The fallback should NOT trigger and should NOT spawn `gh auth token`.
+  it('invokes the token resolver on a non-rate-limit 403 (e.g. SSO enforcement)', async () => {
+    // A 403 with remaining quota (e.g. SSO not enabled for the token) should
+    // still attempt auth in case a different token would succeed.
     fetchMock
-      .mockResolvedValueOnce(permissionDeniedResponse())
-      .mockResolvedValueOnce(permissionDeniedResponse())
-      .mockResolvedValueOnce(permissionDeniedResponse());
-    const getToken = vi.fn(() => 'should-not-be-called');
+      .mockResolvedValueOnce(permissionDeniedResponse()) // unauth 403
+      .mockResolvedValueOnce(okResponse(SAMPLE_TREE)); // auth succeeds
+    const getToken = vi.fn(() => 'ghp_fake_token');
 
-    const result = await fetchRepoTree('private/repo', undefined, getToken);
+    const result = await fetchRepoTree('org/repo', 'main', getToken);
+
+    expect(result?.sha).toBe('deadbeef');
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('invokes the token resolver and retries with auth on a 404 (private repo)', async () => {
+    // GitHub returns 404 (not 403) for private repos to anonymous callers
+    // to hide their existence. The fix retries with auth on unauthenticated 404.
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 })
+      )
+      .mockResolvedValueOnce(okResponse(SAMPLE_TREE));
+    const getToken = vi.fn(() => 'ghp_fake_token');
+
+    const result = await fetchRepoTree('org/private-repo', 'main', getToken);
+
+    expect(result?.sha).toBe('deadbeef');
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect((retryInit.headers as Record<string, string>)['Authorization']).toBe(
+      'Bearer ghp_fake_token'
+    );
+  });
+
+  it('returns null when a 404 private-repo retry also 404s (repo genuinely missing)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 })
+      );
+    const getToken = vi.fn(() => 'ghp_fake_token');
+
+    const result = await fetchRepoTree('org/nonexistent', 'main', getToken);
 
     expect(result).toBeNull();
-    expect(getToken).not.toHaveBeenCalled();
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('returns null gracefully when rate-limited and no token resolver is provided', async () => {
