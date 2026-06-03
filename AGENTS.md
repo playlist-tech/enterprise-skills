@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents working on the `skills` CLI codebase.
+This file provides guidance to AI coding agents working on the `@playlist-tech/enterprise-skills` CLI codebase.
 
 ## Project Overview
 
-`skills` is the CLI for the open agent skills ecosystem.
+`@playlist-tech/enterprise-skills` is a Playlist Tech enterprise fork of [vercel-labs/skills](https://github.com/vercel-labs/skills), the CLI for the open agent skills ecosystem. The fork adds support for private/internal skill registries and custom telemetry. It is published to npm under the `@playlist-tech` scope and versioned as `<upstream-version>-enterprise.<n>` (e.g. `1.5.6-enterprise.0`).
 
 ## Commands
 
@@ -12,7 +12,6 @@ This file provides guidance to AI coding agents working on the `skills` CLI code
 | ----------------------------- | --------------------------------------------------- |
 | `skills`                      | Show banner with available commands                 |
 | `skills add <pkg>`            | Install skills from git repos, URLs, or local paths |
-| `skills use <pkg>@<skill>`    | Use one skill without installing                    |
 | `skills experimental_install` | Restore skills from skills-lock.json                |
 | `skills experimental_sync`    | Sync skills from node_modules into agent dirs       |
 | `skills list`                 | List installed skills (alias: `ls`)                 |
@@ -58,8 +57,6 @@ src/
 │   ├── mintlify.ts
 │   └── wellknown.ts
 ├── init.test.ts     # Init command tests
-├── use.ts           # Use command - generate a skill prompt or launch an agent
-├── use.test.ts      # Use command tests
 └── test-utils.ts    # Test utilities
 
 tests/
@@ -157,13 +154,7 @@ CI will fail if code is not properly formatted.
 
 ## Publishing
 
-```bash
-# 1. Bump version in package.json
-# 2. Build
-pnpm build
-# 3. Publish
-npm publish
-```
+See [PUBLISHING.md](./PUBLISHING.md) for the full release process, versioning convention, and upstream sync instructions.
 
 ## Adding a New Agent
 

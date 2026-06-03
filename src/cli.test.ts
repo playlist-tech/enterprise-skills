@@ -33,7 +33,7 @@ describe('skills CLI', () => {
   describe('--version', () => {
     it('should display version number', () => {
       const output = runCliOutput(['--version']);
-      expect(output.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(output.trim()).toMatch(/^\d+\.\d+\.\d+(-[\w.]+)*$/);
     });
 
     it('should match package.json version', () => {

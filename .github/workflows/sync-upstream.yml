@@ -1,0 +1,274 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # hourly — effectively "on push" given upstream's pace
+  workflow_dispatch:
+
+jobs:
+  # ── Job 1: detect whether upstream has new commits ──────────────────────────
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      new_commits: ${{ steps.check.outputs.new }}
+      upstream_sha: ${{ steps.check.outputs.upstream_sha }}
+      last_sha: ${{ steps.check.outputs.last_sha }}
+      count: ${{ steps.check.outputs.count }}
+
+    steps:
+      - name: Checkout enterprise branch
+        uses: actions/checkout@v6
+        with:
+          ref: enterprise
+          fetch-depth: 0
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/vercel-labs/skills.git
+          git fetch upstream main
+
+      - name: Check for new commits
+        id: check
+        run: |
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+
+          if [ -f .github/upstream-sync-sha ]; then
+            LAST_SHA=$(cat .github/upstream-sync-sha)
+          else
+            LAST_SHA=$(git merge-base HEAD upstream/main)
+          fi
+
+          echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+          echo "last_sha=$LAST_SHA"         >> "$GITHUB_OUTPUT"
+
+          if [ "$LAST_SHA" = "$UPSTREAM_SHA" ]; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+            echo "count=0"   >> "$GITHUB_OUTPUT"
+            echo "No new upstream commits."
+          else
+            COUNT=$(git log --oneline "${LAST_SHA}..upstream/main" | wc -l | tr -d ' ')
+            echo "new=true"    >> "$GITHUB_OUTPUT"
+            echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+            echo "Found $COUNT new upstream commit(s)."
+          fi
+
+  # ── Job 2: merge, build, test, release ──────────────────────────────────────
+  sync:
+    needs: detect
+    if: needs.detect.outputs.new_commits == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    env:
+      UPSTREAM_SHA: ${{ needs.detect.outputs.upstream_sha }}
+      LAST_SHA: ${{ needs.detect.outputs.last_sha }}
+      COUNT: ${{ needs.detect.outputs.count }}
+
+    steps:
+      - name: Checkout enterprise branch
+        uses: actions/checkout@v6
+        with:
+          ref: enterprise
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/vercel-labs/skills.git
+          git fetch upstream main
+          git fetch origin main
+
+      # ── Sync fork main ────────────────────────────────────────────────────────
+
+      - name: Sync fork main to upstream
+        run: |
+          git checkout -B main origin/main
+          git merge upstream/main --no-edit
+          git push origin main
+          git checkout -B enterprise origin/enterprise
+
+      # ── Merge upstream into enterprise ───────────────────────────────────────
+
+      - name: Attempt upstream merge
+        # -X union: auto-resolves overlapping hunks by keeping both sides.
+        # True semantic conflicts (e.g. same line changed differently) still
+        # surface as conflicts and fall through to the issue path.
+        run: git merge upstream/main --no-edit --no-commit -X union || true
+
+      - name: Restore enterprise-owned files
+        run: |
+          # These files are intentionally different from upstream — always keep ours.
+          # See PUBLISHING.md for the authoritative list.
+          for f in \
+            package.json \
+            pnpm-lock.yaml \
+            README.md \
+            AGENTS.md \
+            PUBLISHING.md \
+            .npmrc \
+            .github/CODEOWNERS \
+            .github/workflows/publish-enterprise.yml \
+            .github/workflows/publish.yml; do
+            if git ls-files --error-unmatch "$f" 2>/dev/null; then
+              git checkout enterprise -- "$f" 2>/dev/null || true
+            fi
+          done
+
+      - name: Check for remaining conflicts
+        id: conflicts
+        run: |
+          CONFLICTS=$(git diff --name-only --diff-filter=U)
+          if [ -n "$CONFLICTS" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            printf '%s' "$CONFLICTS" > /tmp/conflict-files.txt
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open conflict issue and abort
+        if: steps.conflicts.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OPEN=$(gh issue list --label upstream-sync --state open --json number --jq length)
+          if [ "$OPEN" -gt 0 ]; then
+            echo "Conflict issue already open — skipping duplicate."
+            exit 1
+          fi
+
+          RANGE="${LAST_SHA:0:8}..${UPSTREAM_SHA:0:8}"
+          CONFLICT_FILES=$(cat /tmp/conflict-files.txt)
+          COMMITS=$(git log --oneline "${LAST_SHA}..upstream/main" | head -20)
+
+          ISSUE_URL=$(gh issue create \
+            --title "Upstream sync blocked: merge conflicts ($RANGE)" \
+            --body "$(printf '%s\n\n%s\n\n%s\n\`\`\`\n%s\n\`\`\`\n\n%s\n\`\`\`\n%s\n\`\`\`\n\n%s' \
+              "The automated upstream sync detected merge conflicts that cannot be auto-resolved." \
+              "**Upstream range:** \`$RANGE\`" \
+              "**Conflicting files:**" "$CONFLICT_FILES" \
+              "**Upstream commits in this range:**" "$COMMITS" \
+              "**To resolve manually**, follow PUBLISHING.md — merge \`upstream/main\` into a new branch off \`enterprise\`, resolve conflicts, and merge to \`enterprise\`.")")
+          gh issue edit "$ISSUE_URL" --add-label upstream-sync
+
+          git merge --abort || true
+          exit 1
+
+      # ── Version bump ──────────────────────────────────────────────────────────
+
+      - name: Compute new enterprise version
+        id: version
+        run: |
+          UPSTREAM_VERSION=$(git show upstream/main:package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+          CURRENT=$(node -p "require('./package.json').version")
+          CURRENT_BASE=$(echo "$CURRENT" | sed 's/-enterprise\..*//')
+          CURRENT_N=$(echo "$CURRENT"    | sed 's/.*-enterprise\.//')
+
+          if [ "$UPSTREAM_VERSION" != "$CURRENT_BASE" ]; then
+            NEW_VERSION="${UPSTREAM_VERSION}-enterprise.1"
+          else
+            NEW_VERSION="${CURRENT_BASE}-enterprise.$((CURRENT_N + 1))"
+          fi
+
+          echo "version=$NEW_VERSION"               >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version in package.json
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.version }}"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.NEW_VERSION;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+
+      # ── Build and test ────────────────────────────────────────────────────────
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build
+        id: build
+        run: pnpm build
+        continue-on-error: true
+
+      - name: Test
+        id: test
+        if: steps.build.outcome == 'success'
+        run: pnpm test
+        continue-on-error: true
+
+      - name: Open failure issue and abort
+        if: steps.build.outcome == 'failure' || steps.test.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STEP_FAILED: ${{ steps.build.outcome == 'failure' && 'build' || 'tests' }}
+        run: |
+          OPEN=$(gh issue list --label upstream-sync --state open --json number --jq length)
+          if [ "$OPEN" -gt 0 ]; then
+            echo "Failure issue already open — skipping duplicate."
+            exit 1
+          fi
+
+          RANGE="${LAST_SHA:0:8}..${UPSTREAM_SHA:0:8}"
+          COMMITS=$(git log --oneline "${LAST_SHA}..upstream/main" | head -20)
+
+          ISSUE_URL=$(gh issue create \
+            --title "Upstream sync blocked: $STEP_FAILED failed ($RANGE)" \
+            --body "$(printf '%s\n\n%s\n\n%s\n\`\`\`\n%s\n\`\`\`\n\n%s \`sync/upstream-%s\`%s' \
+              "The automated upstream sync failed at the **$STEP_FAILED** step after merging upstream commits." \
+              "**Upstream range:** \`$RANGE\`" \
+              "**Upstream commits in this range:**" "$COMMITS" \
+              "**To resolve manually**, check out branch" "${UPSTREAM_SHA:0:8}" ", investigate the failure, and merge to \`enterprise\` once fixed.")")
+          gh issue edit "$ISSUE_URL" --add-label upstream-sync
+
+          # Push sync branch so it's inspectable
+          git add -A
+          git commit -m "chore: upstream sync $RANGE [${STEP_FAILED} failed — needs manual review]" || true
+          git push origin "HEAD:refs/heads/sync/upstream-${UPSTREAM_SHA:0:8}"
+          exit 1
+
+      # ── Commit, push enterprise, tag → triggers publish-enterprise.yml ───────
+
+      - name: Update upstream-sync-sha tracker
+        run: echo "$UPSTREAM_SHA" > .github/upstream-sync-sha
+
+      - name: Commit sync
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          UPSTREAM_VERSION="${{ steps.version.outputs.upstream_version }}"
+          RANGE="${LAST_SHA:0:8}..${UPSTREAM_SHA:0:8}"
+
+          git add -A
+          git commit -m "chore: sync upstream $UPSTREAM_VERSION + release $VERSION
+
+          Merged $COUNT upstream commit(s): $RANGE
+
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+
+      - name: Push enterprise branch
+        run: git push origin enterprise
+
+      - name: Tag and push release
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"

@@ -1,21 +1,13 @@
-name: Publish
+name: Publish Enterprise
 
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: 'Version bump type'
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
+  push:
+    tags:
+      - 'v*-enterprise.*'
 
 jobs:
   publish:
-    if: false # disabled in enterprise fork — publishing handled by publish-enterprise.yml
     runs-on: ubuntu-latest
-    environment: npm-publish
     permissions:
       contents: write
       id-token: write
@@ -43,42 +35,16 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Import GPG signing key
-        # Pinned to a maintainer-owned fork of crazy-max/ghaction-import-gpg
-        # so a compromise of the upstream namespace can't push malicious code
-        # into our release pipeline. Update the SHA deliberately when pulling
-        # upstream changes.
-        uses: quuu/ghaction-import-gpg@72c784c2e295f26ec09b0c20761c93711beaa338
-        with:
-          gpg_private_key: ${{ secrets.PUBLISH_BOT_GPG_PRIVATE_KEY }}
-          git_user_signingkey: true
-          git_commit_gpgsign: true
-          git_tag_gpgsign: true
-          git_config_global: true
-
-      - name: Reset generated files
-        run: |
-          git checkout -- ThirdPartyNoticeText.txt || true
-
-      - name: Bump version
-        run: |
-          npm version ${{ inputs.bump }} -m "v%s"
-
-      - name: Push changes
-        run: |
-          git push
-          git push --tags
-
       - name: Publish to npm
         id: publish
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag latest
 
       - name: Create GitHub Release
         if: steps.publish.outcome == 'success'
         run: |
           VERSION=$(node -p "require('./package.json').version")
 
-          # Get changelog from merged PRs since last tag
+          # Get changelog from merged PRs since last enterprise tag
           LATEST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -z "$LATEST_TAG" ]; then
             SINCE=""
@@ -86,7 +52,6 @@ jobs:
             SINCE=$(git log -1 --format=%cI ${LATEST_TAG})
           fi
 
-          # Fetch merged PRs and format as changelog
           if [ -z "$SINCE" ]; then
             PRS=$(gh pr list --state merged --json number,title,author --limit 100)
           else
@@ -96,7 +61,6 @@ jobs:
           CHANGELOG=$(echo "$PRS" | jq -r '.[] | "- \(.title) (#\(.number))"')
           CONTRIBUTORS=$(echo "$PRS" | jq -r '.[].author.login' | sort -u | sed 's/^/@/' | paste -sd ', ' -)
 
-          # Generate release notes from template
           export VERSION CHANGELOG CONTRIBUTORS
           envsubst < .github/RELEASE_TEMPLATE.md > release-notes.md
 
