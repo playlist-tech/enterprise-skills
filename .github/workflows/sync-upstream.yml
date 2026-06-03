@@ -144,15 +144,15 @@ jobs:
           CONFLICT_FILES=$(cat /tmp/conflict-files.txt)
           COMMITS=$(git log --oneline "${LAST_SHA}..upstream/main" | head -20)
 
-          gh issue create \
+          ISSUE_URL=$(gh issue create \
             --title "Upstream sync blocked: merge conflicts ($RANGE)" \
-            --label upstream-sync \
             --body "$(printf '%s\n\n%s\n\n%s\n\`\`\`\n%s\n\`\`\`\n\n%s\n\`\`\`\n%s\n\`\`\`\n\n%s' \
               "The automated upstream sync detected merge conflicts that cannot be auto-resolved." \
               "**Upstream range:** \`$RANGE\`" \
               "**Conflicting files:**" "$CONFLICT_FILES" \
               "**Upstream commits in this range:**" "$COMMITS" \
-              "**To resolve manually**, follow PUBLISHING.md — merge \`upstream/main\` into a new branch off \`enterprise\`, resolve conflicts, and merge to \`enterprise\`.")"
+              "**To resolve manually**, follow PUBLISHING.md — merge \`upstream/main\` into a new branch off \`enterprise\`, resolve conflicts, and merge to \`enterprise\`.")")
+          gh issue edit "$ISSUE_URL" --add-label upstream-sync
 
           git merge --abort || true
           exit 1
@@ -228,14 +228,14 @@ jobs:
           RANGE="${LAST_SHA:0:8}..${UPSTREAM_SHA:0:8}"
           COMMITS=$(git log --oneline "${LAST_SHA}..upstream/main" | head -20)
 
-          gh issue create \
+          ISSUE_URL=$(gh issue create \
             --title "Upstream sync blocked: $STEP_FAILED failed ($RANGE)" \
-            --label upstream-sync \
             --body "$(printf '%s\n\n%s\n\n%s\n\`\`\`\n%s\n\`\`\`\n\n%s \`sync/upstream-%s\`%s' \
               "The automated upstream sync failed at the **$STEP_FAILED** step after merging upstream commits." \
               "**Upstream range:** \`$RANGE\`" \
               "**Upstream commits in this range:**" "$COMMITS" \
-              "**To resolve manually**, check out branch" "${UPSTREAM_SHA:0:8}" ", investigate the failure, and merge to \`enterprise\` once fixed.")"
+              "**To resolve manually**, check out branch" "${UPSTREAM_SHA:0:8}" ", investigate the failure, and merge to \`enterprise\` once fixed.")")
+          gh issue edit "$ISSUE_URL" --add-label upstream-sync
 
           # Push sync branch so it's inspectable
           git add -A
