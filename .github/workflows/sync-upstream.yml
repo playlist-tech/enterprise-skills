@@ -89,10 +89,10 @@ jobs:
 
       - name: Sync fork main to upstream
         run: |
-          git checkout main
+          git checkout -B main origin/main
           git merge upstream/main --no-edit
           git push origin main
-          git checkout enterprise
+          git checkout -B enterprise origin/enterprise
 
       # ── Merge upstream into enterprise ───────────────────────────────────────
 
