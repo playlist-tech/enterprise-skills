@@ -3,33 +3,15 @@ import pc from 'picocolors';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { sep, join, dirname } from 'path';
-import { parseSource, getOwnerRepo, parseOwnerRepo, isRepoPrivate } from './source-parser.ts';
+import {
+  parseSource,
+  getOwnerRepo,
+  parseOwnerRepo,
+  getRepoVisibility,
+  type SourceVisibility,
+} from './source-parser.ts';
 import { stripTerminalEscapes } from './sanitize.ts';
 import { searchMultiselect } from './prompts/search-multiselect.ts';
-
-// Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
-const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
-
-/**
- * Check if a source identifier (owner/repo format) represents a private GitHub repo.
- * Returns true if private, false if public, null if unable to determine or not a GitHub repo.
- */
-async function isSourcePrivate(source: string): Promise<boolean | null> {
-  const ownerRepo = parseOwnerRepo(source);
-  if (!ownerRepo) {
-    // Not in owner/repo format, assume not private (could be other providers)
-    return false;
-  }
-  return isRepoPrivate(ownerRepo.owner, ownerRepo.repo);
-}
-
-export function getLockSource(parsedUrl: string, normalizedSource: string | null): string | null {
-  // Preserve SSH URLs in lock files instead of normalizing to owner/repo shorthand.
-  // When normalizedSource is used, parseSource() later resolves it to HTTPS,
-  // breaking restore for private repos that require SSH authentication.
-  const isSSH = parsedUrl.startsWith('git@') || parsedUrl.startsWith('ssh://');
-  return isSSH ? parsedUrl : normalizedSource;
-}
 import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
 import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
 import {
@@ -49,15 +31,18 @@ import {
 } from './agents.ts';
 import {
   track,
+  shouldSendTelemetry,
   setVersion,
   fetchAuditData,
   type AuditResponse,
   type PartnerAudit,
 } from './telemetry.ts';
 import { detectAgent, getAgentType } from './detect-agent.ts';
+import { wireUserPromptHook } from './hooks.ts';
 import { wellKnownProvider, type WellKnownSkill } from './providers/index.ts';
 import {
   addSkillToLock,
+  addHookRef,
   fetchSkillFolderHash,
   getGitHubToken,
   isPromptDismissed,
@@ -75,6 +60,21 @@ import {
   type BlobInstallResult,
 } from './blob.ts';
 import packageJson from '../package.json' with { type: 'json' };
+
+// Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
+const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
+
+async function getSourceVisibility(source: string): Promise<SourceVisibility> {
+  const ownerRepo = parseOwnerRepo(source);
+  if (!ownerRepo) return 'unknown';
+  return getRepoVisibility(ownerRepo.owner, ownerRepo.repo);
+}
+
+export function getLockSource(parsedUrl: string, normalizedSource: string | null): string | null {
+  const isSSH = parsedUrl.startsWith('git@') || parsedUrl.startsWith('ssh://');
+  return isSSH ? parsedUrl : normalizedSource;
+}
+
 export function initTelemetry(version: string): void {
   setVersion(version);
 }
@@ -736,7 +736,9 @@ async function handleWellKnownSkills(
 
   // Kick off privacy check early so it runs in parallel with installation
   const sourceIdentifier = wellKnownProvider.getSourceIdentifier(url);
-  const wellKnownPrivacyPromise = isSourcePrivate(sourceIdentifier).catch(() => null);
+  const wellKnownPrivacyPromise = getSourceVisibility(sourceIdentifier).catch(
+    (): SourceVisibility => 'unknown'
+  );
 
   spinner.start('Installing skills...');
 
@@ -777,9 +779,8 @@ async function handleWellKnownSkills(
     skillFiles[skill.installName] = skill.sourceUrl;
   }
 
-  // Privacy promise was started before installation — should be resolved by now
-  const isPrivate = await wellKnownPrivacyPromise;
-  if (isPrivate !== true) {
+  const visibility = await wellKnownPrivacyPromise;
+  if (shouldSendTelemetry(visibility)) {
     track({
       event: 'install',
       source: sourceIdentifier,
@@ -826,6 +827,7 @@ async function handleWellKnownSkills(
                 source: sourceIdentifier,
                 sourceType: 'well-known',
                 computedHash,
+                skillRef: `${sourceIdentifier}/${skill.installName}`,
               },
               cwd
             );
@@ -980,11 +982,13 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     // cloning/discovering/installing. The result is only needed later for
     // telemetry gating — it should never block user-visible output.
     const ownerRepoRaw = getOwnerRepo(parsed);
-    const repoPrivacyPromise: Promise<boolean | null> = (() => {
-      if (!ownerRepoRaw) return Promise.resolve(null);
+    const repoPrivacyPromise: Promise<SourceVisibility> = (() => {
+      if (!ownerRepoRaw) return Promise.resolve<SourceVisibility>('unknown');
       const ownerRepo = parseOwnerRepo(ownerRepoRaw);
-      if (!ownerRepo) return Promise.resolve(null);
-      return isRepoPrivate(ownerRepo.owner, ownerRepo.repo).catch(() => null);
+      if (!ownerRepo) return Promise.resolve<SourceVisibility>('unknown');
+      return getRepoVisibility(ownerRepo.owner, ownerRepo.repo).catch(
+        (): SourceVisibility => 'unknown'
+      );
     })();
 
     // Block openclaw sources unless explicitly opted in
@@ -1552,6 +1556,36 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     spinner.stop('Installation complete');
 
+    // Wire per-skill UserPromptSubmit hooks for installed skills (non-fatal)
+    let hooksWired = false;
+    for (const skill of selectedSkills) {
+      const skillName = getSkillDisplayName(skill);
+      const skillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skillName}` : skillName;
+      for (const agentName of targetAgents) {
+        try {
+          const changed = await wireUserPromptHook({ skillName, skillRef, agent: agentName });
+          if (changed) hooksWired = true;
+        } catch {
+          // Hook wiring is best-effort — never fail an install
+        }
+      }
+      // Record ref so `skills remove` knows when it's safe to tear down the hook.
+      try {
+        if (installGlobally) {
+          await addHookRef(skillRef, { global: true });
+        } else {
+          await addHookRef(skillRef, { projectPath: process.cwd() });
+        }
+      } catch {
+        // best-effort
+      }
+    }
+    if (hooksWired) {
+      console.log(
+        'Hooks were written as part of install — you may need to trust them and restart your AI tools before they take effect.'
+      );
+    }
+
     console.log();
     const successful = results.filter((r) => r.success);
     const failed = results.filter((r) => !r.success);
@@ -1584,27 +1618,14 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     const lockSource = getLockSource(parsed.url, normalizedSource);
 
-    // Only track if we have a valid remote source and it's not a private repo.
-    // repoPrivacyPromise was started early (right after parsing) so it has
-    // already been running in parallel with the entire install — no stall here.
+    // Only track if we have a valid remote source. repoPrivacyPromise was
+    // started early (right after parsing) so it has already been running in
+    // parallel with the entire install — no stall here. For non-owner/repo
+    // sources we have no privacy signal, so we treat them as 'unknown'.
     if (normalizedSource) {
       const ownerRepo = parseOwnerRepo(normalizedSource);
-      if (ownerRepo) {
-        const isPrivate = await repoPrivacyPromise;
-        // Only send telemetry if repo is public (isPrivate === false)
-        // If we can't determine (null), err on the side of caution and skip telemetry
-        if (isPrivate === false) {
-          track({
-            event: 'install',
-            source: normalizedSource,
-            skills: selectedSkills.map((s) => s.name).join(','),
-            agents: targetAgents.join(','),
-            ...(installGlobally && { global: '1' }),
-            skillFiles: JSON.stringify(skillFiles),
-          });
-        }
-      } else {
-        // If we can't parse owner/repo, still send telemetry (for non-GitHub sources)
+      const visibility = ownerRepo ? await repoPrivacyPromise : 'unknown';
+      if (shouldSendTelemetry(visibility)) {
         track({
           event: 'install',
           source: normalizedSource,
@@ -1612,6 +1633,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           agents: targetAgents.join(','),
           ...(installGlobally && { global: '1' }),
           skillFiles: JSON.stringify(skillFiles),
+          sourceType: parsed.type,
         });
       }
     }
@@ -1646,6 +1668,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               if (hash) skillFolderHash = hash;
             }
 
+            const lockSkillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skill.name}` : skill.name;
             await addSkillToLock(skill.name, {
               source: lockSource || normalizedSource,
               sourceType: parsed.type,
@@ -1654,6 +1677,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               skillPath: skillPathValue,
               skillFolderHash,
               pluginName: skill.pluginName,
+              skillRef: lockSkillRef,
             });
           } catch {
             // Don't fail installation if lock file update fails
@@ -1675,6 +1699,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 ? (skill as BlobSkill).snapshotHash
                 : await computeSkillFolderHash(skill.path);
             const skillPathValue = skillFiles[skill.name];
+            const localSkillRef = ownerRepoRaw ? `${ownerRepoRaw}/${skill.name}` : skill.name;
             await addSkillToLocalLock(
               skill.name,
               {
@@ -1683,6 +1708,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 sourceType: parsed.type,
                 ...(skillPathValue && { skillPath: skillPathValue }),
                 computedHash,
+                skillRef: localSkillRef,
               },
               cwd
             );

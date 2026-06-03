@@ -3,9 +3,12 @@ import pc from 'picocolors';
 import { readdir, rm, lstat } from 'fs/promises';
 import { join } from 'path';
 import { agents, detectInstalledAgents } from './agents.ts';
-import { track } from './telemetry.ts';
+import { track, shouldSendTelemetry } from './telemetry.ts';
 import { detectAgent } from './detect-agent.ts';
-import { removeSkillFromLock, getSkillFromLock } from './skill-lock.ts';
+import { removeSkillFromLock, getSkillFromLock, removeHookRef } from './skill-lock.ts';
+import { parseOwnerRepo, getRepoVisibility } from './source-parser.ts';
+import { removeUserPromptHook } from './hooks.ts';
+import { readLocalLock } from './local-lock.ts';
 import type { AgentType } from './types.ts';
 import {
   getInstallPath,
@@ -224,6 +227,46 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
       const effectiveSource = lockEntry?.source || 'local';
       const effectiveSourceType = lockEntry?.sourceType || 'local';
 
+      // Resolve skillRef from global lock (global install) or local lock (project install).
+      // Falls back to "source/skillName" derived on the fly, or just skillName.
+      let skillRef: string | undefined = lockEntry?.skillRef;
+      if (!skillRef && !isGlobal) {
+        try {
+          const localLock = await readLocalLock(cwd);
+          skillRef = localLock.skills[skillName]?.skillRef;
+        } catch {
+          // best-effort
+        }
+      }
+      // Derive from source if still missing (skills installed before skillRef was tracked)
+      if (!skillRef) {
+        const src = lockEntry?.source;
+        skillRef = src ? `${src}/${skillName}` : skillName;
+      }
+
+      // Only unref / remove hooks when the skill is fully gone from this scope.
+      // A partial --agent remove leaves the skill installed for other agents, so
+      // the prompt hook should stay active.
+      if (!isStillUsed) {
+        try {
+          const shouldRemove = await removeHookRef(
+            skillRef,
+            isGlobal ? { global: true } : { projectPath: cwd }
+          );
+          if (shouldRemove) {
+            for (const agentKey of targetAgents) {
+              try {
+                await removeUserPromptHook({ skillRef, agent: agentKey });
+              } catch {
+                // Hook removal is best-effort — never fail an uninstall
+              }
+            }
+          }
+        } catch {
+          // ref tracking is best-effort
+        }
+      }
+
       if (isGlobal) {
         await removeSkillFromLock(skillName);
       }
@@ -261,14 +304,20 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
     }
 
     for (const [source, data] of bySource) {
-      track({
-        event: 'remove',
-        source,
-        skills: data.skills.join(','),
-        agents: targetAgents.join(','),
-        ...(isGlobal && { global: '1' }),
-        sourceType: data.sourceType,
-      });
+      const ownerRepo = parseOwnerRepo(source);
+      const visibility = ownerRepo
+        ? await getRepoVisibility(ownerRepo.owner, ownerRepo.repo).catch(() => 'unknown' as const)
+        : 'unknown';
+      if (shouldSendTelemetry(visibility)) {
+        track({
+          event: 'remove',
+          source,
+          skills: data.skills.join(','),
+          agents: targetAgents.join(','),
+          ...(isGlobal && { global: '1' }),
+          sourceType: data.sourceType,
+        });
+      }
     }
   }
 
