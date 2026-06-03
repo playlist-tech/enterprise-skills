@@ -60,9 +60,13 @@ vi.mock('fs', async (importOriginal) => {
 });
 
 // Mock child_process to prevent actual command execution
-vi.mock('child_process', () => ({
-  spawnSync: vi.fn().mockReturnValue({ status: 0 }), // Mock spawnSync for updates
-}));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    spawnSync: vi.fn().mockReturnValue({ status: 0 }), // Mock spawnSync for updates
+  };
+});
 
 describe('Update Cleanup Unit Tests', () => {
   beforeEach(() => {
