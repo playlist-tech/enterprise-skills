@@ -271,12 +271,20 @@ export function findSkillMdPaths(tree: RepoTree, subpath?: string): string[] {
 
   if (filtered.length === 0) return [];
 
-  // Check priority directories first (same order as discoverSkills)
+  // Check priority directories first (same order as discoverSkills).
+  // Non-root prefixes also accept depth-2 paths so the blob fast path stays
+  // in sync with the on-disk walk's catalog-layout discovery.
   const priorityResults: string[] = [];
   const seen = new Set<string>();
+  // Mirror of SKIP_DIRS at the top of src/skills.ts. Kept local to avoid
+  // a cross-file import; if these ever drift, update both.
+  const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '__pycache__']);
+  const lowerSkillMdSet = new Set(filtered.map((p) => p.toLowerCase()));
 
   for (const priorityPrefix of PRIORITY_PREFIXES) {
     const fullPrefix = prefix + priorityPrefix;
+    const isContainer = priorityPrefix !== '';
+
     for (const skillMd of filtered) {
       // Check if this SKILL.md is directly inside the priority dir (one level deep)
       if (!skillMd.startsWith(fullPrefix)) continue;
@@ -295,6 +303,25 @@ export function findSkillMdPaths(tree: RepoTree, subpath?: string): string[] {
       const parts = rest.split('/');
       if (parts.length === 2 && parts[1]!.toLowerCase() === 'skill.md') {
         if (!seen.has(skillMd)) {
+          priorityResults.push(skillMd);
+          seen.add(skillMd);
+        }
+        continue;
+      }
+
+      // SKILL.md two levels deep under a known container prefix
+      // (e.g., "skills/<category>/<skill>/SKILL.md"). Skip if the parent
+      // child dir already has its own SKILL.md (no descent past), or if
+      // any path segment is an ignored directory.
+      if (
+        isContainer &&
+        parts.length === 3 &&
+        parts[2]!.toLowerCase() === 'skill.md' &&
+        !SKIP_DIRS.has(parts[0]!) &&
+        !SKIP_DIRS.has(parts[1]!)
+      ) {
+        const parentSkillMd = `${fullPrefix}${parts[0]}/SKILL.md`.toLowerCase();
+        if (!lowerSkillMdSet.has(parentSkillMd) && !seen.has(skillMd)) {
           priorityResults.push(skillMd);
           seen.add(skillMd);
         }
