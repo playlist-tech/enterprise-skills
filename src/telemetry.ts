@@ -211,13 +211,6 @@ export function track(data: TelemetryData): void {
  */
 export async function flushTelemetry(timeoutMs = 5000): Promise<void> {
   if (pendingTelemetry.length === 0) return;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, timeoutMs);
-  });
-  try {
-    await Promise.race([Promise.all(pendingTelemetry), timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
+  await Promise.race([Promise.all(pendingTelemetry), timeout]);
 }
