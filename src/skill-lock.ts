@@ -157,7 +157,7 @@ export function getGitHubToken(): string | null {
   // Last resort: spawn gh CLI. Warn the user once per process before doing so.
   if (!_ghWarningShown) {
     process.stderr.write(
-      `${pc.yellow('│')}  ${pc.yellow('GitHub rate limit reached')} — using your ${pc.cyan('gh')} login to continue.\n` +
+      `${pc.yellow('│')}  ${pc.yellow('Authenticating with GitHub')} — using your ${pc.cyan('gh')} login to access this repo.\n` +
         `${pc.yellow('│')}  ${pc.dim(`Tip: set ${pc.cyan('GITHUB_TOKEN')} to avoid this prompt, or use ${pc.cyan('--full-depth')} to clone instead.\n`)}`
     );
     _ghWarningShown = true;

@@ -141,10 +141,11 @@ async function fetchTreeBranch(
  *
  * Authentication is lazy: by default the call goes out unauthenticated,
  * which is enough for the vast majority of users (60 req/hr per IP).
- * Only if GitHub responds with a rate-limit 403 do we ask the optional
- * `getToken` callback for a token and retry. This avoids invoking
- * `gh auth token` on every install, which corporate endpoint security
- * tools flag as suspicious credential extraction. See issue #523.
+ * If the unauthenticated pass fails for any reason (rate-limit 403,
+ * private-repo 404, etc.) and a `getToken` callback is provided, we retry
+ * with a token. This avoids invoking `gh auth token` on every install, which
+ * corporate endpoint security tools flag as suspicious credential extraction,
+ * while still handling private repos correctly. See issues #523 and #1331.
  */
 export async function fetchRepoTree(
   ownerRepo: string,
@@ -178,10 +179,11 @@ export async function fetchRepoTree(
     }
   }
 
-  if (!rateLimited || !getToken) return null;
+  if (!getToken) return null;
 
-  // Lazy fallback: rate limit hit and a token resolver was provided.
-  _rateLimitedThisSession = true;
+  // Lazy fallback: unauthenticated pass failed (rate limit, private repo 404,
+  // or other error) — retry with a token if one is available.
+  if (rateLimited) _rateLimitedThisSession = true;
   const token = getToken();
   if (!token) return null;
 
