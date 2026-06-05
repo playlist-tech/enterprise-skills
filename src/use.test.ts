@@ -39,19 +39,27 @@ describe('use command', () => {
 
   describe('parseUseOptions', () => {
     it('parses owner/repo@skill as the source', () => {
-      const result = parseUseOptions(['vercel-labs/agent-skills@nextjs']);
+      const result = parseUseOptions(['vercel-labs/agent-skills@web-design-guidelines']);
 
-      expect(result.source).toEqual(['vercel-labs/agent-skills@nextjs']);
+      expect(result.source).toEqual(['vercel-labs/agent-skills@web-design-guidelines']);
       expect(result.options.skill).toBeUndefined();
       expect(result.errors).toEqual([]);
     });
 
     it('parses --skill and -s selectors', () => {
-      const longFlag = parseUseOptions(['vercel-labs/agent-skills', '--skill', 'nextjs']);
-      const shortFlag = parseUseOptions(['vercel-labs/agent-skills', '-s', 'nextjs']);
+      const longFlag = parseUseOptions([
+        'vercel-labs/agent-skills',
+        '--skill',
+        'web-design-guidelines',
+      ]);
+      const shortFlag = parseUseOptions([
+        'vercel-labs/agent-skills',
+        '-s',
+        'web-design-guidelines',
+      ]);
 
-      expect(longFlag.options.skill).toBe('nextjs');
-      expect(shortFlag.options.skill).toBe('nextjs');
+      expect(longFlag.options.skill).toBe('web-design-guidelines');
+      expect(shortFlag.options.skill).toBe('web-design-guidelines');
       expect(longFlag.errors).toEqual([]);
       expect(shortFlag.errors).toEqual([]);
     });
@@ -82,7 +90,7 @@ describe('use command', () => {
 
     it('rejects wildcard, missing, invalid, and multiple agents', () => {
       const wildcard = parseUseOptions(['source', '--agent', '*']);
-      const missing = parseUseOptions(['source', '--agent', '--skill', 'nextjs']);
+      const missing = parseUseOptions(['source', '--agent', '--skill', 'web-design-guidelines']);
       const invalid = parseUseOptions(['source', '--agent', 'not-an-agent']);
       const multiple = parseUseOptions(['source', '--agent', 'claude-code', 'codex']);
 
@@ -282,7 +290,12 @@ describe('use command', () => {
 
     it('fails for conflicting @skill and --skill selectors before downloading', () => {
       const result = runCli(
-        ['use', 'vercel-labs/agent-skills@nextjs', '--skill', 'react-best-practices'],
+        [
+          'use',
+          'vercel-labs/agent-skills@web-design-guidelines',
+          '--skill',
+          'react-best-practices',
+        ],
         testDir
       );
 

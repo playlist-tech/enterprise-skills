@@ -22,8 +22,8 @@ npx skills add vercel-labs/agent-skills
 Generate a prompt for one skill, or start a supported coding agent interactively:
 
 ```bash
-npx skills use vercel-labs/agent-skills@nextjs | claude
-npx skills use vercel-labs/agent-skills --skill nextjs --agent claude-code
+npx skills use vercel-labs/agent-skills@web-design-guidelines | claude
+npx skills use vercel-labs/agent-skills --skill web-design-guidelines --agent claude-code
 ```
 
 `skills use` resolves sources the same way as `skills add`, writes the selected skill files to a temporary directory, and prints only the generated prompt to stdout unless `--agent` is provided. With `--agent`, it starts one supported agent interactively with the generated prompt.

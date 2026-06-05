@@ -383,9 +383,9 @@ Options:
   -h, --help            Show this help message
 
 Examples:
-  skills use vercel-labs/agent-skills@nextjs | claude
-  skills use vercel-labs/agent-skills --skill nextjs --agent claude-code
-  skills use vercel-labs/agent-skills@nextjs --agent codex`;
+  skills use vercel-labs/agent-skills@web-design-guidelines | claude
+  skills use vercel-labs/agent-skills --skill web-design-guidelines --agent claude-code
+  skills use vercel-labs/agent-skills@web-design-guidelines --agent codex`;
 }
 
 function resolveSelector(sourceSelector?: string, optionSelector?: string): string | undefined {
