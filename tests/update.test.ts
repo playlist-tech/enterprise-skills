@@ -8,6 +8,7 @@ import * as skillLock from '../src/skill-lock.ts';
 import * as remove from '../src/remove.ts';
 import * as p from '@clack/prompts';
 import { readFileSync } from 'fs';
+import { join } from 'path';
 
 // Mock dependencies
 vi.mock('../src/git.ts');
@@ -59,9 +60,13 @@ vi.mock('fs', async (importOriginal) => {
 });
 
 // Mock child_process to prevent actual command execution
-vi.mock('child_process', () => ({
-  spawnSync: vi.fn().mockReturnValue({ status: 0 }), // Mock spawnSync for updates
-}));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    spawnSync: vi.fn().mockReturnValue({ status: 0 }), // Mock spawnSync for updates
+  };
+});
 
 describe('Update Cleanup Unit Tests', () => {
   beforeEach(() => {
@@ -213,17 +218,14 @@ describe('Update Cleanup Unit Tests', () => {
         },
       });
 
-      // Mock fetchRepoTree
       vi.mocked(blob.fetchRepoTree).mockResolvedValue({
         sha: 'rootsha',
         branch: 'main',
         tree: [
           { path: 'skills/skill-a/SKILL.md', type: 'blob', sha: 'sha1' },
-          { path: 'skills/skill-a', type: 'tree', sha: 'sha2' },
+          { path: 'skills/skill-a', type: 'tree', sha: 'abc' },
         ],
       });
-
-      // Mock findSkillMdPaths
       vi.mocked(blob.findSkillMdPaths).mockReturnValue(['skills/skill-a/SKILL.md']);
 
       vi.mocked(p.confirm).mockResolvedValue(true);
@@ -234,6 +236,36 @@ describe('Update Cleanup Unit Tests', () => {
       expect(remove.removeCommand).toHaveBeenCalledWith(
         ['skill-b'],
         expect.objectContaining({ yes: true, global: true })
+      );
+    });
+
+    it('should check global non-GitHub git sources by cloning', async () => {
+      vi.mocked(skillLock.readSkillLock).mockResolvedValue({
+        version: 3,
+        skills: {
+          'skill-a': {
+            source: 'git@github.com:owner/repo.git',
+            sourceUrl: 'git@github.com:owner/repo.git',
+            skillPath: 'skills/skill-a/SKILL.md',
+            sourceType: 'git',
+            skillFolderHash: 'old-hash',
+            installedAt: '',
+            updatedAt: '',
+          },
+        },
+      });
+
+      vi.mocked(git.cloneRepo).mockResolvedValue('/tmp/repo');
+      vi.mocked(skills.discoverSkills).mockResolvedValue([
+        { name: 'skill-a', path: '/tmp/repo/skills/skill-a', description: 'A', rawContent: '' },
+      ]);
+      vi.mocked(localLock.computeSkillFolderHash).mockResolvedValue('new-hash');
+
+      await updateGlobalSkills({ yes: true });
+
+      expect(git.cloneRepo).toHaveBeenCalledWith('git@github.com:owner/repo.git', undefined);
+      expect(localLock.computeSkillFolderHash).toHaveBeenCalledWith(
+        join('/tmp/repo', 'skills/skill-a')
       );
     });
   });

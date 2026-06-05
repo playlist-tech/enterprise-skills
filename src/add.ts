@@ -3,33 +3,15 @@ import pc from 'picocolors';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { sep, join, dirname } from 'path';
-import { parseSource, getOwnerRepo, parseOwnerRepo, isRepoPrivate } from './source-parser.ts';
+import {
+  parseSource,
+  getOwnerRepo,
+  parseOwnerRepo,
+  getRepoVisibility,
+  type SourceVisibility,
+} from './source-parser.ts';
 import { stripTerminalEscapes } from './sanitize.ts';
 import { searchMultiselect } from './prompts/search-multiselect.ts';
-
-// Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
-const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
-
-/**
- * Check if a source identifier (owner/repo format) represents a private GitHub repo.
- * Returns true if private, false if public, null if unable to determine or not a GitHub repo.
- */
-async function isSourcePrivate(source: string): Promise<boolean | null> {
-  const ownerRepo = parseOwnerRepo(source);
-  if (!ownerRepo) {
-    // Not in owner/repo format, assume not private (could be other providers)
-    return false;
-  }
-  return isRepoPrivate(ownerRepo.owner, ownerRepo.repo);
-}
-
-export function getLockSource(parsedUrl: string, normalizedSource: string | null): string | null {
-  // Preserve SSH URLs in lock files instead of normalizing to owner/repo shorthand.
-  // When normalizedSource is used, parseSource() later resolves it to HTTPS,
-  // breaking restore for private repos that require SSH authentication.
-  const isSSH = parsedUrl.startsWith('git@') || parsedUrl.startsWith('ssh://');
-  return isSSH ? parsedUrl : normalizedSource;
-}
 import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
 import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
 import {
@@ -44,11 +26,13 @@ import {
   detectInstalledAgents,
   agents,
   getUniversalAgents,
+  getVisibleUniversalAgents,
   getNonUniversalAgents,
   isUniversalAgent,
 } from './agents.ts';
 import {
   track,
+  shouldSendTelemetry,
   setVersion,
   fetchAuditData,
   type AuditResponse,
@@ -77,6 +61,21 @@ import {
   type BlobInstallResult,
 } from './blob.ts';
 import packageJson from '../package.json' with { type: 'json' };
+
+// Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
+const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
+
+async function getSourceVisibility(source: string): Promise<SourceVisibility> {
+  const ownerRepo = parseOwnerRepo(source);
+  if (!ownerRepo) return 'unknown';
+  return getRepoVisibility(ownerRepo.owner, ownerRepo.repo);
+}
+
+export function getLockSource(parsedUrl: string, normalizedSource: string | null): string | null {
+  const isSSH = parsedUrl.startsWith('git@') || parsedUrl.startsWith('ssh://');
+  return isSSH ? parsedUrl : normalizedSource;
+}
+
 export function initTelemetry(version: string): void {
   setVersion(version);
 }
@@ -375,15 +374,17 @@ async function selectAgentsInteractive(options: {
   const supportsGlobalFilter = (a: AgentType) => !options.global || agents[a].globalSkillsDir;
 
   const universalAgents = getUniversalAgents().filter(supportsGlobalFilter);
+  const visibleUniversalAgents = getVisibleUniversalAgents().filter(supportsGlobalFilter);
   const otherAgents = getNonUniversalAgents().filter(supportsGlobalFilter);
 
   // Universal agents shown as locked section
   const universalSection = {
     title: 'Universal (.agents/skills)',
-    items: universalAgents.map((a) => ({
+    items: visibleUniversalAgents.map((a) => ({
       value: a,
       label: agents[a].displayName,
     })),
+    hiddenCount: universalAgents.length - visibleUniversalAgents.length,
   };
 
   // Other agents are selectable with their skillsDir as hint
@@ -738,7 +739,9 @@ async function handleWellKnownSkills(
 
   // Kick off privacy check early so it runs in parallel with installation
   const sourceIdentifier = wellKnownProvider.getSourceIdentifier(url);
-  const wellKnownPrivacyPromise = isSourcePrivate(sourceIdentifier).catch(() => null);
+  const wellKnownPrivacyPromise = getSourceVisibility(sourceIdentifier).catch(
+    (): SourceVisibility => 'unknown'
+  );
 
   spinner.start('Installing skills...');
 
@@ -779,9 +782,8 @@ async function handleWellKnownSkills(
     skillFiles[skill.installName] = skill.sourceUrl;
   }
 
-  // Privacy promise was started before installation — should be resolved by now
-  const isPrivate = await wellKnownPrivacyPromise;
-  if (isPrivate !== true) {
+  const visibility = await wellKnownPrivacyPromise;
+  if (shouldSendTelemetry(visibility)) {
     track({
       event: 'install',
       source: sourceIdentifier,
@@ -857,11 +859,19 @@ async function handleWellKnownSkills(
       const firstResult = skillResults[0]!;
 
       if (firstResult.mode === 'copy') {
-        // Copy mode: show skill name and list all agent paths
+        // Copy mode: group by unique path (global installs share one dir across agents)
         resultLines.push(`${pc.green('✓')} ${skillName} ${pc.dim('(copied)')}`);
+        const byPath = new Map<string, string[]>();
         for (const r of skillResults) {
           const shortPath = shortenPath(r.path, cwd);
-          resultLines.push(`  ${pc.dim('→')} ${shortPath}`);
+          const names = byPath.get(shortPath) ?? [];
+          names.push(r.agent);
+          byPath.set(shortPath, names);
+        }
+        for (const [shortPath, agentNames] of byPath) {
+          resultLines.push(
+            `  ${pc.dim('→')} ${shortPath} ${pc.dim('(' + formatList(agentNames) + ')')}`
+          );
         }
       } else {
         // Symlink mode: show canonical path and universal/symlinked agents
@@ -983,11 +993,13 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     // cloning/discovering/installing. The result is only needed later for
     // telemetry gating — it should never block user-visible output.
     const ownerRepoRaw = getOwnerRepo(parsed);
-    const repoPrivacyPromise: Promise<boolean | null> = (() => {
-      if (!ownerRepoRaw) return Promise.resolve(null);
+    const repoPrivacyPromise: Promise<SourceVisibility> = (() => {
+      if (!ownerRepoRaw) return Promise.resolve<SourceVisibility>('unknown');
       const ownerRepo = parseOwnerRepo(ownerRepoRaw);
-      if (!ownerRepo) return Promise.resolve(null);
-      return isRepoPrivate(ownerRepo.owner, ownerRepo.repo).catch(() => null);
+      if (!ownerRepo) return Promise.resolve<SourceVisibility>('unknown');
+      return getRepoVisibility(ownerRepo.owner, ownerRepo.repo).catch(
+        (): SourceVisibility => 'unknown'
+      );
     })();
 
     // Block openclaw sources unless explicitly opted in
@@ -1617,27 +1629,14 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     const lockSource = getLockSource(parsed.url, normalizedSource);
 
-    // Only track if we have a valid remote source and it's not a private repo.
-    // repoPrivacyPromise was started early (right after parsing) so it has
-    // already been running in parallel with the entire install — no stall here.
+    // Only track if we have a valid remote source. repoPrivacyPromise was
+    // started early (right after parsing) so it has already been running in
+    // parallel with the entire install — no stall here. For non-owner/repo
+    // sources we have no privacy signal, so we treat them as 'unknown'.
     if (normalizedSource) {
       const ownerRepo = parseOwnerRepo(normalizedSource);
-      if (ownerRepo) {
-        const isPrivate = await repoPrivacyPromise;
-        // Only send telemetry if repo is public (isPrivate === false)
-        // If we can't determine (null), err on the side of caution and skip telemetry
-        if (isPrivate === false) {
-          track({
-            event: 'install',
-            source: normalizedSource,
-            skills: selectedSkills.map((s) => s.name).join(','),
-            agents: targetAgents.join(','),
-            ...(installGlobally && { global: '1' }),
-            skillFiles: JSON.stringify(skillFiles),
-          });
-        }
-      } else {
-        // If we can't parse owner/repo, still send telemetry (for non-GitHub sources)
+      const visibility = ownerRepo ? await repoPrivacyPromise : 'unknown';
+      if (shouldSendTelemetry(visibility)) {
         track({
           event: 'install',
           source: normalizedSource,
@@ -1645,6 +1644,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           agents: targetAgents.join(','),
           ...(installGlobally && { global: '1' }),
           skillFiles: JSON.stringify(skillFiles),
+          sourceType: parsed.type,
         });
       }
     }
@@ -1766,11 +1766,19 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           const firstResult = skillResults[0]!;
 
           if (firstResult.mode === 'copy') {
-            // Copy mode: show skill name and list all agent paths
+            // Copy mode: group by unique path (global installs share one dir across agents)
             resultLines.push(`${pc.green('✓')} ${entry.skill} ${pc.dim('(copied)')}`);
+            const byPath = new Map<string, string[]>();
             for (const r of skillResults) {
               const shortPath = shortenPath(r.path, cwd);
-              resultLines.push(`  ${pc.dim('→')} ${shortPath}`);
+              const names = byPath.get(shortPath) ?? [];
+              names.push(r.agent);
+              byPath.set(shortPath, names);
+            }
+            for (const [shortPath, agentNames] of byPath) {
+              resultLines.push(
+                `  ${pc.dim('→')} ${shortPath} ${pc.dim('(' + formatList(agentNames) + ')')}`
+              );
             }
           } else {
             // Symlink mode: show canonical path and universal/symlinked agents

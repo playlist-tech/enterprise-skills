@@ -5,13 +5,8 @@ import { fileURLToPath } from 'url';
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 
-import {
-  readSkillLock,
-  fetchSkillFolderHash,
-  getGitHubToken,
-  type SkillLockEntry,
-} from './skill-lock.ts';
-import { readLocalLock, type LocalSkillLockEntry } from './local-lock.ts';
+import { readSkillLock, getGitHubToken, type SkillLockEntry } from './skill-lock.ts';
+import { computeSkillFolderHash, readLocalLock, type LocalSkillLockEntry } from './local-lock.ts';
 import {
   formatSourceInput,
   buildUpdateInstallSource,
@@ -336,13 +331,22 @@ export async function updateGlobalSkills(
 
   for (const [source, itemsForSource] of bySource) {
     const firstEntry = itemsForSource[0]!.entry;
+    const sourceUrl = firstEntry.sourceUrl || firstEntry.source;
+    let tempDir: string | null = null;
 
     process.stdout.write(`\r${DIM}Checking skills from source: ${source}${RESET}\x1b[K\n`);
 
     try {
-      const tree = await fetchRepoTree(source, firstEntry.ref, getGitHubToken);
+      const isGitHubSource = firstEntry.sourceType === 'github';
 
-      if (tree) {
+      if (isGitHubSource) {
+        const tree = await fetchRepoTree(source, firstEntry.ref, getGitHubToken);
+
+        if (!tree) {
+          console.log(`  ${DIM}✗ Failed to fetch tree for ${source}${RESET}`);
+          continue;
+        }
+
         const discoveredPaths = findSkillMdPaths(tree);
 
         const allLockedForSource = Object.entries(lock.skills)
@@ -358,17 +362,55 @@ export async function updateGlobalSkills(
           discoveredPaths
         );
 
+        const deletedSkillSet = new Set(deletedSkills);
+
         for (const { name: skillName, entry } of itemsForSource) {
+          if (deletedSkillSet.has(skillName)) continue;
+
           const latestHash = getSkillFolderHashFromTree(tree, entry.skillPath!);
           if (latestHash && latestHash !== entry.skillFolderHash) {
             updates.push({ name: skillName, source, entry });
           }
         }
-      } else {
-        console.log(`  ${DIM}✗ Failed to fetch tree for ${source}${RESET}`);
+
+        continue;
+      }
+
+      tempDir = await cloneRepo(sourceUrl, firstEntry.ref);
+      const discoveredPaths = (await discoverSkills(tempDir)).map((skill) => {
+        return join(relative(tempDir!, skill.path), 'SKILL.md').split(sep).join('/');
+      });
+
+      const allLockedForSource = Object.entries(lock.skills)
+        .filter(([_, entry]) => entry.source === source)
+        .map(([name, _]) => name);
+
+      const deletedSkills = await checkAndPromptForDeletions(
+        source,
+        allLockedForSource,
+        lock.skills,
+        true,
+        options,
+        discoveredPaths
+      );
+
+      const deletedSkillSet = new Set(deletedSkills);
+
+      for (const { name: skillName, entry } of itemsForSource) {
+        if (deletedSkillSet.has(skillName)) continue;
+
+        const skillPath = entry.skillPath!;
+        if (!discoveredPaths.includes(skillPath)) continue;
+
+        const latestHash = await computeSkillFolderHash(join(tempDir, dirname(skillPath)));
+        if (latestHash && latestHash !== entry.skillFolderHash) {
+          updates.push({ name: skillName, source, entry });
+        }
       }
     } catch (error) {
-      console.log(`  ${DIM}✗ Error checking skills from ${source}${RESET}`);
+      console.log(`  ${DIM}✗ Failed to check skills from ${source}${RESET}`);
+    } finally {
+      if (tempDir) await cleanupTempDir(tempDir);
     }
   }
 

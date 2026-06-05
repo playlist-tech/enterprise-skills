@@ -1009,7 +1009,7 @@ export async function listInstalledSkills(
             continue;
           }
 
-          const agentBase = scope.global ? agent.globalSkillsDir! : join(cwd, agent.skillsDir);
+          const agentBase = getAgentBaseDir(agentType, scope.global, cwd);
           let found = false;
 
           // Try exact directory name matches

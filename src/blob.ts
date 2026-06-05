@@ -141,10 +141,11 @@ async function fetchTreeBranch(
  *
  * Authentication is lazy: by default the call goes out unauthenticated,
  * which is enough for the vast majority of users (60 req/hr per IP).
- * Only if GitHub responds with a rate-limit 403 do we ask the optional
- * `getToken` callback for a token and retry. This avoids invoking
- * `gh auth token` on every install, which corporate endpoint security
- * tools flag as suspicious credential extraction. See issue #523.
+ * If the unauthenticated pass fails for any reason (rate-limit 403,
+ * private-repo 404, etc.) and a `getToken` callback is provided, we retry
+ * with a token. This avoids invoking `gh auth token` on every install, which
+ * corporate endpoint security tools flag as suspicious credential extraction,
+ * while still handling private repos correctly. See issues #523 and #1331.
  */
 export async function fetchRepoTree(
   ownerRepo: string,
@@ -178,10 +179,11 @@ export async function fetchRepoTree(
     }
   }
 
-  if (!rateLimited || !getToken) return null;
+  if (!getToken) return null;
 
-  // Lazy fallback: rate limit hit and a token resolver was provided.
-  _rateLimitedThisSession = true;
+  // Lazy fallback: unauthenticated pass failed (rate limit, private repo 404,
+  // or other error) — retry with a token if one is available.
+  if (rateLimited) _rateLimitedThisSession = true;
   const token = getToken();
   if (!token) return null;
 
@@ -271,12 +273,20 @@ export function findSkillMdPaths(tree: RepoTree, subpath?: string): string[] {
 
   if (filtered.length === 0) return [];
 
-  // Check priority directories first (same order as discoverSkills)
+  // Check priority directories first (same order as discoverSkills).
+  // Non-root prefixes also accept depth-2 paths so the blob fast path stays
+  // in sync with the on-disk walk's catalog-layout discovery.
   const priorityResults: string[] = [];
   const seen = new Set<string>();
+  // Mirror of SKIP_DIRS at the top of src/skills.ts. Kept local to avoid
+  // a cross-file import; if these ever drift, update both.
+  const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '__pycache__']);
+  const lowerSkillMdSet = new Set(filtered.map((p) => p.toLowerCase()));
 
   for (const priorityPrefix of PRIORITY_PREFIXES) {
     const fullPrefix = prefix + priorityPrefix;
+    const isContainer = priorityPrefix !== '';
+
     for (const skillMd of filtered) {
       // Check if this SKILL.md is directly inside the priority dir (one level deep)
       if (!skillMd.startsWith(fullPrefix)) continue;
@@ -295,6 +305,25 @@ export function findSkillMdPaths(tree: RepoTree, subpath?: string): string[] {
       const parts = rest.split('/');
       if (parts.length === 2 && parts[1]!.toLowerCase() === 'skill.md') {
         if (!seen.has(skillMd)) {
+          priorityResults.push(skillMd);
+          seen.add(skillMd);
+        }
+        continue;
+      }
+
+      // SKILL.md two levels deep under a known container prefix
+      // (e.g., "skills/<category>/<skill>/SKILL.md"). Skip if the parent
+      // child dir already has its own SKILL.md (no descent past), or if
+      // any path segment is an ignored directory.
+      if (
+        isContainer &&
+        parts.length === 3 &&
+        parts[2]!.toLowerCase() === 'skill.md' &&
+        !SKIP_DIRS.has(parts[0]!) &&
+        !SKIP_DIRS.has(parts[1]!)
+      ) {
+        const parentSkillMd = `${fullPrefix}${parts[0]}/SKILL.md`.toLowerCase();
+        if (!lowerSkillMdSet.has(parentSkillMd) && !seen.has(skillMd)) {
           priorityResults.push(skillMd);
           seen.add(skillMd);
         }

@@ -2,6 +2,9 @@ export type AgentType =
   | 'aider-desk'
   | 'amp'
   | 'antigravity'
+  | 'antigravity-cli'
+  | 'astrbot'
+  | 'autohand-code'
   | 'augment'
   | 'bob'
   | 'claude-code'
@@ -27,31 +30,44 @@ export type AgentType =
   | 'github-copilot'
   | 'goose'
   | 'hermes-agent'
+  | 'inference-sh'
   | 'iflow-cli'
+  | 'jazz'
   | 'junie'
   | 'kilo'
-  | 'kimi-cli'
+  | 'kimi-code-cli'
   | 'kiro-cli'
   | 'kode'
+  | 'lingma'
+  | 'loaf'
   | 'mcpjam'
   | 'mistral-vibe'
+  | 'moxby'
   | 'mux'
   | 'neovate'
   | 'opencode'
   | 'openhands'
+  | 'ona'
   | 'pi'
   | 'qoder'
+  | 'qoder-cn'
   | 'qwen-code'
   | 'replit'
+  | 'reasonix'
   | 'roo'
   | 'rovodev'
   | 'tabnine-cli'
+  | 'terramind'
+  | 'tinycloud'
   | 'trae'
   | 'trae-cn'
   | 'warp'
   | 'windsurf'
+  | 'zed'
   | 'zencoder'
+  | 'zenflow'
   | 'pochi'
+  | 'promptscript'
   | 'adal'
   | 'universal';
 
@@ -87,6 +103,8 @@ export interface AgentConfig {
   promptEvent?: string;
   /** How to write hook entries for this agent. */
   hookSchema?: HookSchema;
+  /** Whether to display this universal agent in the interactive locked section. Defaults to true. */
+  showInUniversalPrompt?: boolean;
 }
 
 export interface ParsedSource {
