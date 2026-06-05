@@ -334,6 +334,7 @@ export async function repairHooks(options?: {
   // Collect installed skillRefs, tracking scope so we can rebuild hookRefs.
   const installedRefs = new Set<string>();
   const installedSkillsByRef = new Map<string, { skillName: string }>();
+  const installedSkillNames = new Set<string>();
   const globalRefs = new Set<string>();
   const projectRefsByPath = new Map<string, Set<string>>();
 
@@ -341,7 +342,31 @@ export async function repairHooks(options?: {
     const ref = entry.skillRef ?? skillName;
     installedRefs.add(ref);
     installedSkillsByRef.set(ref, { skillName });
+    installedSkillNames.add(skillName);
     globalRefs.add(ref);
+  }
+
+  // Also pick up skills that exist on disk but have no lock entry — this covers
+  // skills installed before the lock file was introduced, or after a lock wipe
+  // due to a version migration. Use the directory name as both skillName and
+  // skillRef (bare-name ref). Hook wiring still works; reinstalling the skill
+  // later will overwrite with the canonical full ref.
+  const globalSkillsDir = join(home, '.agents', 'skills');
+  if (existsSync(globalSkillsDir)) {
+    try {
+      for (const entry of readdirSync(globalSkillsDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const skillName = entry.name;
+        if (!installedSkillNames.has(skillName)) {
+          installedRefs.add(skillName);
+          installedSkillsByRef.set(skillName, { skillName });
+          installedSkillNames.add(skillName);
+          globalRefs.add(skillName);
+        }
+      }
+    } catch {
+      // best-effort
+    }
   }
 
   for (const projectPath of projectPaths) {

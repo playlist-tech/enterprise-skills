@@ -564,6 +564,58 @@ describe('repairHooks', () => {
     expect(cmd).toContain('--skill-ref acme/skills/new-skill');
     expect(cmd).not.toContain('old-skill');
   });
+
+  it('wires hooks for skills found on disk but absent from the lock file', async () => {
+    // Simulate a post-lock-migration state: skill dir exists, lock is empty.
+    writeGlobalLock({});
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    mkdirSync(join(home, '.agents', 'skills', 'gh-ship'), { recursive: true });
+
+    const result = await repairHooks({ home });
+
+    expect(result.wired).toBeGreaterThanOrEqual(1);
+    expect(result.agentsRepaired).toContain('Claude Code');
+
+    const settings = readJson(join(home, '.claude', 'settings.json'));
+    const promptHooks = (settings['hooks'] as Record<string, unknown>)[
+      'UserPromptSubmit'
+    ] as unknown[];
+    const cmds = promptHooks.flatMap((e) =>
+      ((e as Record<string, unknown>)['hooks'] as unknown[]).map(
+        (h) => (h as Record<string, unknown>)['command'] as string
+      )
+    );
+    expect(cmds.some((c) => c.includes('--skill-ref gh-ship'))).toBe(true);
+  });
+
+  it('prefers lock entry ref over disk-only fallback when both exist', async () => {
+    // Lock has the canonical full ref; disk dir also present — lock ref wins.
+    writeGlobalLock({
+      'gh-ship': {
+        source: 'acme/skills',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/acme/skills',
+        skillFolderHash: 'abc123',
+        installedAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        skillRef: 'acme/skills/gh-ship',
+      },
+    });
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    mkdirSync(join(home, '.agents', 'skills', 'gh-ship'), { recursive: true });
+
+    await repairHooks({ home });
+
+    const settings = readJson(join(home, '.claude', 'settings.json'));
+    const promptHooks = (settings['hooks'] as Record<string, unknown>)[
+      'UserPromptSubmit'
+    ] as unknown[];
+    expect(promptHooks).toHaveLength(1);
+    const inner = (promptHooks[0] as Record<string, unknown>)['hooks'] as unknown[];
+    expect((inner[0] as Record<string, unknown>)['command']).toContain(
+      '--skill-ref acme/skills/gh-ship'
+    );
+  });
 });
 
 // ─── isHookSetupDone ───────────────────────────────────────────────────────
