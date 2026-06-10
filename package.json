@@ -101,11 +101,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jacobstringfellow/skills.git"
+    "url": "git+https://github.com/playlist-tech/enterprise-skills.git"
   },
-  "homepage": "https://github.com/jacobstringfellow/skills/tree/enterprise#readme",
+  "homepage": "https://github.com/playlist-tech/enterprise-skills/tree/enterprise#readme",
   "bugs": {
-    "url": "https://github.com/jacobstringfellow/skills/issues"
+    "url": "https://github.com/playlist-tech/enterprise-skills/issues"
   },
   "author": "Playlist Tech",
   "license": "MIT",

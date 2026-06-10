@@ -3,7 +3,7 @@
 Enterprise fork of [Vercel Labs' skills CLI](https://github.com/vercel-labs/skills), adding support for private/internal skill registries and custom telemetry while we wait for those features upstream.
 
 > [!NOTE]
-> This is Playlist Tech's fork of [vercel-labs/skills](https://github.com/vercel-labs/skills). The `main` branch tracks upstream. Enterprise features and the published `@playlist-tech/enterprise-skills` npm package live on the [`enterprise` branch](https://github.com/jacobstringfellow/skills/tree/enterprise).
+> This is Playlist Tech's fork of [vercel-labs/skills](https://github.com/vercel-labs/skills). The `main` branch tracks upstream. Enterprise features and the published `@playlist-tech/enterprise-skills` npm package live on the [`enterprise` branch](https://github.com/playlist-tech/enterprise-skills/tree/enterprise).
 
 <!-- agent-list:start -->
 
@@ -479,7 +479,7 @@ Telemetry is automatically disabled in CI environments.
 
 ## Related Links
 
-- [Enterprise fork (this repo)](https://github.com/jacobstringfellow/skills/tree/enterprise)
+- [Enterprise fork (this repo)](https://github.com/playlist-tech/enterprise-skills/tree/enterprise)
 - [Upstream: vercel-labs/skills](https://github.com/vercel-labs/skills)
 - [Agent Skills Specification](https://agentskills.io)
 - [Skills Directory](https://skills.sh)

@@ -53,7 +53,7 @@ Most features should be upstreamable to [vercel-labs/skills](https://github.com/
 
 5. **Open the enterprise PR**:
    ```bash
-   gh pr create --repo jacobstringfellow/skills --base enterprise
+   gh pr create --repo playlist-tech/enterprise-skills --base enterprise
    ```
 
 6. **Merge into `enterprise`** without waiting for upstream to accept
@@ -76,7 +76,7 @@ Most features should be upstreamable to [vercel-labs/skills](https://github.com/
 ## Prerequisites
 
 - Node >= 18, pnpm installed
-- Push access to `jacobstringfellow/skills` with permission to create tags matching `v*-enterprise.*`
+- Push access to `playlist-tech/enterprise-skills` with permission to create tags matching `v*-enterprise.*`
 
 ## Release steps
 
