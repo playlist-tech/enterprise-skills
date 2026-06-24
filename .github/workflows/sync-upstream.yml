@@ -97,7 +97,16 @@ jobs:
       - name: Sync fork main to upstream
         run: |
           git checkout -B main origin/main
-          git merge upstream/main --no-edit
+          git merge upstream/main --no-edit -X theirs || true
+          for f in \
+            README.md \
+            .github/CODEOWNERS \
+            .github/workflows/publish-enterprise.yml \
+            .github/workflows/publish.yml \
+            .github/workflows/sync-upstream.yml; do
+            git checkout origin/main -- "$f" 2>/dev/null || true
+          done
+          git diff --cached --quiet || git commit --amend --no-edit
           git push origin main
           git checkout -B enterprise origin/enterprise
 
