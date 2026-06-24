@@ -67,12 +67,19 @@ jobs:
       COUNT: ${{ needs.detect.outputs.count }}
 
     steps:
+      - name: Generate bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GEN_AI_SKILLS_BOT_APP_ID }}
+          private-key: ${{ secrets.GEN_AI_SKILLS_BOT_PRIVATE_KEY }}
+
       - name: Checkout enterprise branch
         uses: actions/checkout@v6
         with:
           ref: enterprise
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PAT }}
+          token: ${{ steps.bot-token.outputs.token }}
 
       - name: Configure git
         run: |
