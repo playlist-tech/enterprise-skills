@@ -10,6 +10,7 @@
  *   3. skills.sh/api/download → fetch full file contents from cached blob
  */
 
+import { createHash } from 'node:crypto';
 import { parseFrontmatter } from './frontmatter.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import type { Skill } from './types.ts';
@@ -42,6 +43,14 @@ export interface BlobSkill extends Skill {
 // ─── Constants ───
 
 const DOWNLOAD_BASE_URL = process.env.SKILLS_DOWNLOAD_URL || 'https://skills.sh';
+
+// Repos that self-host their downloads on the blob fast-path
+export const BLOB_ALLOWED_REPOS: Record<string, { downloadUrl: (slug: string) => string }> = {
+  'zapier/connectors': {
+    downloadUrl: (slug) =>
+      `https://connectors-skills.zapier.com/download/${encodeURIComponent(slug)}/snapshot.json`,
+  },
+};
 
 /** Timeout for individual HTTP fetches (ms) */
 const FETCH_TIMEOUT = 10_000;
@@ -372,7 +381,10 @@ async function fetchSkillDownload(
 ): Promise<SkillDownloadResponse | null> {
   try {
     const [owner, repo] = source.split('/');
-    const url = `${DOWNLOAD_BASE_URL}/api/download/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}/${encodeURIComponent(slug)}`;
+    const defaultUrl = `${DOWNLOAD_BASE_URL}/api/download/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}/${encodeURIComponent(slug)}`;
+    // Self-hosted repos build their own URL; otherwise fall back to the default.
+    const selfHosted = BLOB_ALLOWED_REPOS[source.toLowerCase()]?.downloadUrl(slug);
+    const url = selfHosted ?? defaultUrl;
     const response = await fetch(url, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT),
     });
@@ -388,6 +400,15 @@ async function fetchSkillDownload(
 export interface BlobInstallResult {
   skills: BlobSkill[];
   tree: RepoTree;
+}
+
+function computeSnapshotHash(files: SkillSnapshotFile[]): string {
+  const hash = createHash('sha256');
+  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+    hash.update(file.path);
+    hash.update(file.contents);
+  }
+  return hash.digest('hex');
 }
 
 /**
@@ -519,6 +540,16 @@ export async function tryBlobInstall(
         ? ''
         : skill.mdPath.slice(0, -(1 + 'SKILL.md'.length));
 
+    // A root-level SKILL.md means the repository root is a skill entrypoint,
+    // not that the entire repository is installable skill payload. Some cached
+    // snapshots for root skills contain every repo file; installing those can
+    // dump thousands of unrelated files into .agents/skills/<name>. Keep root
+    // skills to their SKILL.md unless/until the skill spec gains an explicit
+    // include list for supporting files.
+    const files = folderPath
+      ? download!.files
+      : download!.files.filter((file) => file.path.toLowerCase() === 'skill.md');
+
     return {
       name: skill.name,
       description: skill.description,
@@ -527,8 +558,9 @@ export async function tryBlobInstall(
       path: '',
       rawContent: skill.content,
       metadata: skill.metadata,
-      files: download!.files,
-      snapshotHash: download!.hash,
+      files,
+      snapshotHash:
+        files.length === download!.files.length ? download!.hash : computeSnapshotHash(files),
       repoPath: skill.mdPath,
     };
   });
