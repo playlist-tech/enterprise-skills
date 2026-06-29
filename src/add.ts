@@ -10,6 +10,7 @@ import { searchMultiselect } from './prompts/search-multiselect.ts';
 
 // Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
 const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
+const EVE_AGENT_LABEL = 'eve agent';
 
 /**
  * Check if a source identifier (owner/repo format) represents a private GitHub repo.
@@ -201,6 +202,18 @@ function formatList(items: string[], maxShow: number = 5): string {
   const shown = items.slice(0, maxShow);
   const remaining = items.length - maxShow;
   return `${shown.join(', ')} +${remaining} more`;
+}
+
+function formatSkillPromptSubject(skills: Skill[]): string {
+  const names = skills.map((skill) => pc.cyan(getSkillDisplayName(skill)));
+  const namedSubject = formatList(names, 3);
+  return stripTerminalEscapes(namedSubject).length <= 80
+    ? namedSubject
+    : `${skills.length} selected skills`;
+}
+
+export function formatEveInstallPromptMessage(skills: Skill[]): string {
+  return `Detected an eve project. Install ${formatSkillPromptSubject(skills)} for your ${EVE_AGENT_LABEL} to use?`;
 }
 
 /**
@@ -521,7 +534,6 @@ export interface AddOptions {
   all?: boolean;
   fullDepth?: boolean;
   copy?: boolean;
-  dangerouslyAcceptOpenclawRisks?: boolean;
   /**
    * Eve subagent targets. Each value is a subagent name; `root` (or `.`)
    * selects the root agent. Implies installing for Eve.
@@ -1077,25 +1089,6 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       return isRepoPrivate(ownerRepo.owner, ownerRepo.repo).catch(() => null);
     })();
 
-    // Block openclaw sources unless explicitly opted in
-    const sourceOwner = ownerRepoRaw?.split('/')[0]?.toLowerCase();
-    if (sourceOwner === 'openclaw' && !options.dangerouslyAcceptOpenclawRisks) {
-      console.log();
-      p.log.warn(pc.yellow(pc.bold('⚠ OpenClaw skills are unverified community submissions.')));
-      p.log.message(
-        pc.yellow(
-          'This source contains user-submitted skills that have not been reviewed for safety or quality.'
-        )
-      );
-      p.log.message(pc.yellow('Skills run with full agent permissions and could be malicious.'));
-      console.log();
-      p.log.message(
-        `If you understand the risks, re-run with:\n\n  ${pc.cyan(`npx skills add ${source} --dangerously-accept-openclaw-risks`)}\n`
-      );
-      p.outro(pc.red('Installation blocked'));
-      process.exit(1);
-    }
-
     // Handle well-known skills from arbitrary URLs
     if (parsed.type === 'well-known') {
       await handleWellKnownSkills(source, parsed.url, options, spinner);
@@ -1378,7 +1371,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         const useEve = options.yes
           ? true
           : await p.confirm({
-              message: 'Detected an Eve project. Install skills for Eve?',
+              message: formatEveInstallPromptMessage(selectedSkills),
               initialValue: true,
             });
 
@@ -1390,7 +1383,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
         if (useEve) {
           targetAgents = ['eve'];
-          p.log.info(`Installing to: ${pc.cyan(agents.eve.displayName)}`);
+          p.log.info(`Installing to: ${pc.cyan(EVE_AGENT_LABEL)}`);
         } else {
           const selected = await selectAgentsInteractive({ global: options.global });
 
@@ -2160,8 +2153,6 @@ export function parseAddOptions(args: string[]): { source: string[]; options: Ad
         nextArg = args[i];
       }
       i--; // Back up one since the loop will increment
-    } else if (arg === '--dangerously-accept-openclaw-risks') {
-      options.dangerouslyAcceptOpenclawRisks = true;
     } else if (arg && !arg.startsWith('-')) {
       source.push(arg);
     }
