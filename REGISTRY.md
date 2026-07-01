@@ -64,6 +64,58 @@ Returns detail for a single skill. Two URL forms are supported:
 
 **Response**: the full skill record. Shape is registry-defined; the CLI does not currently consume this endpoint directly but links to it in terminal output.
 
+### `GET /api/plugins/search`
+
+Search for plugins — curated bundles of skills defined by a `plugins/<name>/plugin.yaml` manifest in a repository. Used by `skills plugin search`.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Search query. If omitted or empty, returns all plugins. |
+
+**Response**
+
+```json
+{
+  "query": "pr review",
+  "plugins": [
+    {
+      "name": "pbi-to-pr-loop",
+      "description": "Autonomous PBI → plan → review → implement → PR loop.",
+      "source": "vercel-labs/skills",
+      "version": "0.2.0",
+      "installs": 0,
+      "skills": ["write-plan", "review-plan", "implement-plan"]
+    }
+  ],
+  "count": 1,
+  "duration_ms": 8
+}
+```
+
+**Envelope fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `plugins` | array | yes | Array of plugin results. |
+| `query` | string | no | The search query that produced these results. |
+| `count` | number | no | Total number of results returned. |
+| `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
+
+**Plugin fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Plugin name. Used to install the plugin via `skills plugin install {source}@{name}`. |
+| `description` | string | no | Human-readable summary shown in search results. |
+| `source` | string | no | Repository the plugin lives in, in `{org}/{repo}` format. When present, the CLI can print the exact `plugin install {source}@{name}` command. |
+| `version` | string | no | Plugin manifest version (semver). |
+| `installs` | number | no | Install count. Use `0` if not tracked. |
+| `skills` | array | no | Member skill names bundled by the plugin. |
+
+A registry that does not implement this endpoint should return `404`; the CLI treats that as "plugin search not available" and still supports installing a known plugin by name.
+
 ## Self-hosting
 
 Point the CLI at your registry by setting `SKILLS_API_URL`:
