@@ -348,7 +348,9 @@ async function runPluginSearch(args: string[]): Promise<void> {
     return;
   }
 
-  const data = (await res.json()) as { plugins?: Array<{ name: string; description?: string }> };
+  const data = (await res.json()) as {
+    plugins?: Array<{ name: string; description?: string; source?: string }>;
+  };
   const plugins = data.plugins ?? [];
   if (plugins.length === 0) {
     console.log('No plugins found.');
@@ -357,9 +359,11 @@ async function runPluginSearch(args: string[]): Promise<void> {
   for (const plugin of plugins) {
     console.log(pc.bold(plugin.name));
     if (plugin.description) console.log(`  ${pc.dim(plugin.description)}`);
+    const target = plugin.source
+      ? `${plugin.source}@${plugin.name}`
+      : `<org>/<repo>@${plugin.name}`;
+    console.log(`  ${pc.dim(`${envConfig.cliName} plugin install ${target}`)}`);
   }
-  console.log();
-  console.log(pc.dim(`To install, run: ${envConfig.cliName} plugin install <org>/<repo>@<name>`));
 }
 
 function showPluginHelp(): void {
