@@ -1735,6 +1735,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 ...(skillPathValue && { skillPath: skillPathValue }),
                 computedHash,
                 skillRef: localSkillRef,
+                ...(skill.pluginName && { pluginName: skill.pluginName }),
               },
               cwd
             );

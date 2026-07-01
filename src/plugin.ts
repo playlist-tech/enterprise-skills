@@ -12,7 +12,8 @@
  *
  * Everything downstream (cloning, discovery, agent selection, symlinking,
  * lockfile writing, and list/remove grouping) is reused unchanged — the only
- * new state is the `pluginName` tag already carried by SkillLockEntry.
+ * new state is the `pluginName` tag on each lock entry (global SkillLockEntry
+ * and project-scoped LocalSkillLockEntry), which list/remove/update group on.
  */
 
 import { basename } from 'path';
@@ -25,6 +26,7 @@ import { runAdd, parseAddOptions } from './add.ts';
 import { parseSource, getOwnerRepo } from './source-parser.ts';
 import { getGitHubToken } from './skill-lock.ts';
 import { getAllLockedSkills } from './skill-lock.ts';
+import { readLocalLock } from './local-lock.ts';
 import { removeCommand, parseRemoveOptions } from './remove.ts';
 import { cloneRepo, cleanupTempDir } from './git.ts';
 import { envConfig } from './env-config.ts';
@@ -216,15 +218,40 @@ async function runPluginInstall(args: string[]): Promise<void> {
   }
 }
 
-async function installedByPlugin(): Promise<Map<string, string[]>> {
-  const locked = await getAllLockedSkills();
-  const byPlugin = new Map<string, string[]>();
-  for (const [skillName, entry] of Object.entries(locked)) {
-    if (!entry.pluginName) continue;
-    const list = byPlugin.get(entry.pluginName) ?? [];
-    list.push(skillName);
-    byPlugin.set(entry.pluginName, list);
+interface InstalledPlugin {
+  skills: string[];
+  /** Scope the plugin's skills live in. A globally-installed member pins the plugin to global for management. */
+  global: boolean;
+}
+
+/**
+ * Group installed skills by the plugin that installed them, across BOTH the
+ * global and project-scoped locks. Plugins install to whichever scope the user
+ * chose, so both must be consulted or `list`/`remove`/`update` would miss them.
+ */
+async function installedByPlugin(): Promise<Map<string, InstalledPlugin>> {
+  const byPlugin = new Map<string, InstalledPlugin>();
+
+  const record = (pluginName: string, skillName: string, global: boolean) => {
+    const existing = byPlugin.get(pluginName);
+    if (existing) {
+      existing.skills.push(skillName);
+      existing.global = existing.global || global;
+    } else {
+      byPlugin.set(pluginName, { skills: [skillName], global });
+    }
+  };
+
+  const globalLocked = await getAllLockedSkills();
+  for (const [skillName, entry] of Object.entries(globalLocked)) {
+    if (entry.pluginName) record(entry.pluginName, skillName, true);
   }
+
+  const localLock = await readLocalLock();
+  for (const [skillName, entry] of Object.entries(localLock.skills)) {
+    if (entry.pluginName) record(entry.pluginName, skillName, false);
+  }
+
   return byPlugin;
 }
 
@@ -238,8 +265,9 @@ async function runPluginList(): Promise<void> {
     return;
   }
   for (const pluginName of [...byPlugin.keys()].sort()) {
-    console.log(pc.bold(pluginName));
-    for (const skillName of byPlugin.get(pluginName)!.sort()) {
+    const entry = byPlugin.get(pluginName)!;
+    console.log(pc.bold(pluginName) + (entry.global ? pc.dim(' (global)') : ''));
+    for (const skillName of [...entry.skills].sort()) {
       console.log(`  ${pc.cyan(skillName)}`);
     }
   }
@@ -254,15 +282,16 @@ async function runPluginRemove(args: string[]): Promise<void> {
   }
 
   const byPlugin = await installedByPlugin();
-  const members = byPlugin.get(pluginName);
-  if (!members || members.length === 0) {
+  const installed = byPlugin.get(pluginName);
+  if (!installed || installed.skills.length === 0) {
     console.error(pc.red(`Plugin '${pluginName}' is not installed.`));
     process.exit(1);
   }
 
-  console.log(pc.dim(`Removing plugin ${pc.cyan(pluginName)} (${members.length} skills)`));
-  // Delegate file/lock/hook removal to the existing remove flow.
-  await removeCommand(members, options);
+  console.log(pc.dim(`Removing plugin ${pc.cyan(pluginName)} (${installed.skills.length} skills)`));
+  // Delegate file/lock/hook removal to the existing remove flow, targeting the
+  // scope the plugin was installed into (the user need not repeat -g).
+  await removeCommand(installed.skills, { ...options, global: installed.global });
 }
 
 async function runPluginUpdate(args: string[]): Promise<void> {
@@ -282,11 +311,12 @@ async function runPluginUpdate(args: string[]): Promise<void> {
   }
 
   const byPlugin = await installedByPlugin();
-  const current = new Set(byPlugin.get(pluginName) ?? []);
-  if (current.size === 0) {
+  const installed = byPlugin.get(pluginName);
+  if (!installed || installed.skills.length === 0) {
     console.error(pc.red(`Plugin '${pluginName}' is not installed. Use 'plugin install' instead.`));
     process.exit(1);
   }
+  const current = new Set(installed.skills);
 
   let manifest: PluginManifest;
   try {
@@ -300,18 +330,20 @@ async function runPluginUpdate(args: string[]): Promise<void> {
   const toAdd = [...desired].filter((s) => !current.has(s));
   const toRemove = [...current].filter((s) => !desired.has(s));
 
-  // Re-install the full desired set so version bumps to retained skills also land.
+  // Re-install the full desired set so version bumps to retained skills also
+  // land, pinned to the scope the plugin already lives in.
   const cleanSource = parsed.ref ? `${ownerRepo}#${parsed.ref}` : ownerRepo;
   await runAdd([cleanSource], {
     ...options,
     yes: true,
+    global: installed.global,
     skill: [...desired],
     pluginName: manifest.name,
   });
 
   if (toRemove.length > 0) {
     console.log(pc.dim(`Removing dropped skills: ${toRemove.join(', ')}`));
-    await removeCommand(toRemove, { yes: true, global: options.global });
+    await removeCommand(toRemove, { yes: true, global: installed.global });
   }
 
   console.log(
