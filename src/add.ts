@@ -535,6 +535,12 @@ export interface AddOptions {
   fullDepth?: boolean;
   copy?: boolean;
   /**
+   * Internal: when set, every installed skill is tagged with this plugin name
+   * in the lockfile so it groups under the plugin in list/remove/update.
+   * Set by the `plugin install` flow — not a user-facing CLI flag.
+   */
+  pluginName?: string;
+  /**
    * Eve subagent targets. Each value is a subagent name; `root` (or `.`)
    * selects the root agent. Implies installing for Eve.
    */
@@ -1331,6 +1337,15 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       }
 
       selectedSkills = selected as Skill[];
+    }
+
+    // When installing as part of a plugin, tag every selected skill with the
+    // plugin name so it is recorded in the lockfile (SkillLockEntry.pluginName)
+    // and grouped by plugin in list / remove / update.
+    if (options.pluginName) {
+      for (const skill of selectedSkills) {
+        skill.pluginName = options.pluginName;
+      }
     }
 
     // Kick off security audit fetch early (non-blocking) so it runs

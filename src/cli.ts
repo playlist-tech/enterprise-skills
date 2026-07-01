@@ -13,6 +13,7 @@ import { flushTelemetry } from './telemetry.ts';
 import { isRunningInAgent } from './detect-agent.ts';
 import { runUpdate } from './update.ts';
 import { runUse, parseUseOptions } from './use.ts';
+import { runPlugin } from './plugin.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -118,6 +119,16 @@ ${BOLD}Manage Skills:${RESET}
 
 ${BOLD}Find Options:${RESET}
   --owner <owner>        Search only repositories from a GitHub owner
+
+${BOLD}Plugins:${RESET}
+  plugin install <org>/<repo>@<name>
+                       Install a plugin's bundled skills
+  plugin list          List installed plugins and their skills
+  plugin update <org>/<repo>@<name>
+                       Re-sync a plugin to its current manifest
+  plugin remove <name> Remove an installed plugin's skills
+  plugin search [query]
+                       Search for plugins
 
 ${BOLD}Updates:${RESET}
   update [skills...]   Update skills to latest versions (alias: upgrade)
@@ -368,6 +379,10 @@ async function main(): Promise<void> {
     case 'list':
     case 'ls':
       await runList(restArgs);
+      break;
+    case 'plugin':
+    case 'plugins':
+      await runPlugin(restArgs);
       break;
     case 'check':
     case 'update':
