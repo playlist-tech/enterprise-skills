@@ -401,6 +401,11 @@ async function main(): Promise<void> {
       break;
     case 'plugin':
     case 'plugins':
+      // Show the logo for interactive plugin search, matching `find`/`search`.
+      if (restArgs[0] === 'search' && !inAgent) {
+        showLogo();
+        console.log();
+      }
       await runPlugin(restArgs);
       break;
     case 'check':
