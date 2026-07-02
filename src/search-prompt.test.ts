@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
-import { interactiveSearch } from './search-prompt.ts';
+import { interactiveSearch, truncateToWidth } from './search-prompt.ts';
 
 // The prompt reads process.stdin/stdout directly. We swap in a minimal fake TTY
 // for the duration of each test and drive it by emitting `keypress` events
@@ -152,6 +152,34 @@ describe('interactiveSearch', () => {
     await expect(promise).resolves.toBeNull();
   });
 
+  it('does not desync when a result row is wider than the terminal', async () => {
+    // A long row would wrap and break the redraw; renderRow output is clipped
+    // to the terminal width so this stays a single visual line.
+    const items: Item[] = [{ name: 'x'.repeat(500) }];
+    const writes: string[] = [];
+    (process.stdout as unknown as { write: (s: string) => void }).write = (s: string) => {
+      writes.push(s);
+    };
+    (process.stdout as unknown as { columns: number }).columns = 80;
+
+    const promise = interactiveSearch<Item>({
+      label: 'x',
+      minChars: 0,
+      search: async () => items,
+      renderRow: (i) => i.name,
+    });
+    await vi.runAllTimersAsync();
+    press(key('return'));
+    await promise;
+
+    // Every written line stays within the terminal width (no wrapping).
+    for (const w of writes) {
+      for (const line of w.split('\n')) {
+        expect(line.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThan(80);
+      }
+    }
+  });
+
   it('renders each result through renderRow', async () => {
     const items: Item[] = [{ name: 'alpha' }, { name: 'beta' }];
     const renderRow = vi.fn((i: Item) => i.name);
@@ -170,5 +198,30 @@ describe('interactiveSearch', () => {
     expect(renderRow.mock.calls.map((c) => c[0].name)).toEqual(
       expect.arrayContaining(['alpha', 'beta'])
     );
+  });
+});
+
+describe('truncateToWidth', () => {
+  const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+
+  it('returns strings that already fit unchanged', () => {
+    expect(truncateToWidth('hello', 10)).toBe('hello');
+    expect(truncateToWidth('hello', 5)).toBe('hello');
+  });
+
+  it('clips long strings to the width with an ellipsis', () => {
+    const out = truncateToWidth('abcdefghij', 5);
+    expect(strip(out)).toBe('abcd…');
+    expect(strip(out).length).toBe(5);
+  });
+
+  it('ignores ANSI codes when measuring width and preserves them', () => {
+    const out = truncateToWidth('\x1b[36mabcdefghij\x1b[0m', 5);
+    expect(strip(out)).toBe('abcd…');
+    expect(out).toContain('\x1b[36m');
+  });
+
+  it('never exceeds the target printable width', () => {
+    expect(strip(truncateToWidth('x'.repeat(200), 40)).length).toBeLessThanOrEqual(40);
   });
 });

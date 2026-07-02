@@ -17,6 +17,42 @@ const CLEAR_DOWN = '\x1b[J';
 const MOVE_UP = (n: number) => `\x1b[${n}A`;
 const MOVE_TO_COL = (n: number) => `\x1b[${n}G`;
 
+const ANSI_SGR = /\x1b\[[0-9;]*m/g;
+
+/** Printable width of a string, ignoring ANSI SGR (color/style) codes. */
+function visibleWidth(s: string): number {
+  return s.replace(ANSI_SGR, '').length;
+}
+
+/**
+ * Truncate a string to `width` printable columns (ANSI-aware), appending an
+ * ellipsis when clipped. The redraw math counts logical lines, so any line that
+ * wraps would desync `MOVE_UP` and leave ghost rows — keeping every line within
+ * the terminal width prevents that.
+ */
+export function truncateToWidth(s: string, width: number): string {
+  if (width <= 0) return '';
+  if (visibleWidth(s) <= width) return s;
+
+  let out = '';
+  let visible = 0;
+  let i = 0;
+  while (i < s.length && visible < width - 1) {
+    if (s[i] === '\x1b') {
+      const m = /^\x1b\[[0-9;]*m/.exec(s.slice(i));
+      if (m) {
+        out += m[0];
+        i += m[0].length;
+        continue;
+      }
+    }
+    out += s[i];
+    visible++;
+    i++;
+  }
+  return `${out}…${RESET}`;
+}
+
 export interface InteractiveSearchOptions<T> {
   /** Text shown before the query input, e.g. "Search skills:". */
   label: string;
@@ -106,8 +142,11 @@ export async function interactiveSearch<T>(opts: InteractiveSearchOptions<T>): P
     lines.push('');
     lines.push(`${DIM}up/down navigate | enter select | esc cancel${RESET}`);
 
+    // Clip each line to the terminal width so nothing wraps — otherwise a
+    // wrapped line would make the next MOVE_UP undercount and leave ghost rows.
+    const maxWidth = (process.stdout.columns ?? 80) - 1;
     for (const line of lines) {
-      process.stdout.write(line + '\n');
+      process.stdout.write(truncateToWidth(line, maxWidth) + '\n');
     }
     lastRenderedLines = vtSupported ? lines.length : 0;
   }
