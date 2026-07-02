@@ -376,12 +376,12 @@ async function searchPluginsAPI(query: string): Promise<PluginSearchHit[]> {
   }
 }
 
-// Interactive plugin browse: show the full list immediately and filter as you
-// type (there are few plugins, so browse-all is the natural default).
+// Interactive plugin search: like `find`, nothing is shown until the user types
+// a query (results appear once the query reaches the minimum length).
 async function runPluginSearchPrompt(): Promise<PluginSearchHit | null> {
   return interactiveSearch<PluginSearchHit>({
     label: 'Search plugins:',
-    minChars: 0,
+    minChars: 2,
     emptyMessage: 'No plugins found',
     search: (q) => searchPluginsAPI(q),
     renderRow: (plugin, selected) => {
@@ -396,7 +396,7 @@ async function runPluginSearchPrompt(): Promise<PluginSearchHit | null> {
 async function runPluginSearch(args: string[]): Promise<void> {
   const query = args.filter((a) => !a.startsWith('-')).join(' ');
 
-  // With no query and a real terminal, browse interactively (like `find`).
+  // With no query and a real terminal, search interactively (like `find`).
   if (!query && process.stdin.isTTY && !(await isRunningInAgent())) {
     const selected = await runPluginSearchPrompt();
     if (!selected) {
@@ -469,7 +469,7 @@ Subcommands:
   list                          List installed plugins and their skills
   update <org>/<repo>@<name>    Re-sync a plugin to its current manifest
   remove <name>                 Remove an installed plugin's skills
-  search [query]                Search plugins, or browse interactively (no query)
+  search [query]                Search for plugins (interactive when no query given)
 
 Options are forwarded to the underlying install/remove flow
 (e.g. -g/--global, -a/--agent, -y/--yes, --copy).
