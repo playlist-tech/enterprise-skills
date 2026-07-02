@@ -30,6 +30,8 @@ import { readLocalLock } from './local-lock.ts';
 import { removeCommand, parseRemoveOptions } from './remove.ts';
 import { cloneRepo, cleanupTempDir } from './git.ts';
 import { envConfig } from './env-config.ts';
+import { isRunningInAgent } from './detect-agent.ts';
+import { interactiveSearch } from './search-prompt.ts';
 
 const FETCH_TIMEOUT = 10_000;
 
@@ -354,8 +356,65 @@ async function runPluginUpdate(args: string[]): Promise<void> {
   );
 }
 
+interface PluginSearchHit {
+  name: string;
+  description?: string;
+  source?: string;
+}
+
+// Query the plugin search API. Returns [] on any failure so the interactive
+// prompt degrades to "no results" rather than throwing mid-render.
+async function searchPluginsAPI(query: string): Promise<PluginSearchHit[]> {
+  const url = `${envConfig.apiBase}/api/plugins/search${query ? `?q=${encodeURIComponent(query)}` : ''}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { plugins?: PluginSearchHit[] };
+    return data.plugins ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Interactive plugin browse: show the full list immediately and filter as you
+// type (there are few plugins, so browse-all is the natural default).
+async function runPluginSearchPrompt(): Promise<PluginSearchHit | null> {
+  return interactiveSearch<PluginSearchHit>({
+    label: 'Search plugins:',
+    minChars: 0,
+    emptyMessage: 'No plugins found',
+    search: (q) => searchPluginsAPI(q),
+    renderRow: (plugin, selected) => {
+      const name = selected ? pc.bold(plugin.name) : pc.cyan(plugin.name);
+      const source = plugin.source ? ` ${pc.dim(plugin.source)}` : '';
+      const desc = plugin.description ? ` ${pc.dim(`— ${plugin.description}`)}` : '';
+      return `${name}${source}${desc}`;
+    },
+  });
+}
+
 async function runPluginSearch(args: string[]): Promise<void> {
   const query = args.filter((a) => !a.startsWith('-')).join(' ');
+
+  // With no query and a real terminal, browse interactively (like `find`).
+  if (!query && process.stdin.isTTY && !(await isRunningInAgent())) {
+    const selected = await runPluginSearchPrompt();
+    if (!selected) {
+      console.log(pc.dim('Search cancelled.'));
+      return;
+    }
+    if (!selected.source) {
+      console.error(pc.red(`Cannot install '${selected.name}': the registry returned no source.`));
+      return;
+    }
+    console.log();
+    console.log(pc.dim(`Installing plugin ${pc.cyan(selected.name)} from ${selected.source}...`));
+    console.log();
+    await runPluginInstall([`${selected.source}@${selected.name}`]);
+    return;
+  }
+
+  // Query given, or non-interactive: print results.
   const url = `${envConfig.apiBase}/api/plugins/search${query ? `?q=${encodeURIComponent(query)}` : ''}`;
 
   let res: Response;
@@ -410,7 +469,7 @@ Subcommands:
   list                          List installed plugins and their skills
   update <org>/<repo>@<name>    Re-sync a plugin to its current manifest
   remove <name>                 Remove an installed plugin's skills
-  search [query]                Search for plugins
+  search [query]                Search plugins, or browse interactively (no query)
 
 Options are forwarded to the underlying install/remove flow
 (e.g. -g/--global, -a/--agent, -y/--yes, --copy).

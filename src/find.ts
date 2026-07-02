@@ -1,10 +1,10 @@
-import * as readline from 'readline';
 import { runAdd, parseAddOptions } from './add.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import { track } from './telemetry.ts';
 import { getRepoVisibility } from './source-parser.ts';
 import { isRunningInAgent } from './detect-agent.ts';
 import { envConfig, installCmd, findCmd } from './env-config.ts';
+import { interactiveSearch } from './search-prompt.ts';
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
@@ -59,204 +59,20 @@ export async function searchSkillsAPI(query: string): Promise<SearchSkill[]> {
   }
 }
 
-// ANSI escape codes for terminal control
-const HIDE_CURSOR = '\x1b[?25l';
-const SHOW_CURSOR = '\x1b[?25h';
-const CLEAR_DOWN = '\x1b[J';
-const MOVE_UP = (n: number) => `\x1b[${n}A`;
-const MOVE_TO_COL = (n: number) => `\x1b[${n}G`;
-
-// Custom fzf-style search prompt using raw readline
-async function runSearchPrompt(initialQuery = ''): Promise<SearchSkill | null> {
-  // VT escape codes only work when the terminal has ANSI/VT processing enabled.
-  // On Windows without VT mode, escape sequences print as literal text, causing
-  // each render to append new lines instead of overwriting the previous frame.
-  const vtSupported = process.stdout.isTTY && (process.stdout.getColorDepth?.() ?? 1) > 1;
-
-  let results: SearchSkill[] = [];
-  let selectedIndex = 0;
-  let query = initialQuery;
-  let loading = false;
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastRenderedLines = 0;
-
-  // Enable raw mode for keypress events
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(true);
-  }
-
-  // Setup readline for keypress events but don't let it echo
-  readline.emitKeypressEvents(process.stdin);
-
-  // Resume stdin to start receiving events
-  process.stdin.resume();
-
-  // Hide cursor during selection (only when VT is supported)
-  if (vtSupported) {
-    process.stdout.write(HIDE_CURSOR);
-  }
-
-  function render(): void {
-    // Move cursor up to overwrite previous render (only when VT is supported)
-    if (vtSupported && lastRenderedLines > 0) {
-      process.stdout.write(MOVE_UP(lastRenderedLines) + MOVE_TO_COL(1));
-    }
-
-    // Clear from cursor to end of screen (only when VT is supported)
-    if (vtSupported) {
-      process.stdout.write(CLEAR_DOWN);
-    }
-
-    const lines: string[] = [];
-
-    // Search input line with cursor
-    const cursor = `${BOLD}_${RESET}`;
-    lines.push(`${TEXT}Search skills:${RESET} ${query}${cursor}`);
-    lines.push('');
-
-    // Results - keep showing existing results while loading new ones
-    if (!query || query.length < 2) {
-      lines.push(`${DIM}Start typing to search (min 2 chars)${RESET}`);
-    } else if (results.length === 0 && loading) {
-      lines.push(`${DIM}Searching...${RESET}`);
-    } else if (results.length === 0) {
-      lines.push(`${DIM}No skills found${RESET}`);
-    } else {
-      const maxVisible = 8;
-      const visible = results.slice(0, maxVisible);
-
-      for (let i = 0; i < visible.length; i++) {
-        const skill = visible[i]!;
-        const isSelected = i === selectedIndex;
-        const arrow = isSelected ? `${BOLD}>${RESET}` : ' ';
-        const name = isSelected ? `${BOLD}${skill.name}${RESET}` : `${TEXT}${skill.name}${RESET}`;
-        const source = skill.source ? ` ${DIM}${skill.source}${RESET}` : '';
-        const installs = formatInstalls(skill.installs);
-        const installsBadge = installs ? ` ${CYAN}${installs}${RESET}` : '';
-        const loadingIndicator = loading && i === 0 ? ` ${DIM}...${RESET}` : '';
-
-        lines.push(`  ${arrow} ${name}${source}${installsBadge}${loadingIndicator}`);
-      }
-    }
-
-    lines.push('');
-    lines.push(`${DIM}up/down navigate | enter select | esc cancel${RESET}`);
-
-    // Write each line
-    for (const line of lines) {
-      process.stdout.write(line + '\n');
-    }
-
-    // Only track height for overwriting when VT is supported
-    lastRenderedLines = vtSupported ? lines.length : 0;
-  }
-
-  function triggerSearch(q: string): void {
-    // Always clear any pending debounce timer
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-
-    // Always reset loading state when starting a new search
-    loading = false;
-
-    if (!q || q.length < 2) {
-      results = [];
-      selectedIndex = 0;
-      render();
-      return;
-    }
-
-    // Use API search for all queries (debounced)
-    loading = true;
-    render();
-
-    // Adaptive debounce: shorter queries = longer wait (user still typing)
-    // 2 chars: 250ms, 3 chars: 200ms, 4 chars: 150ms, 5+ chars: 150ms
-    const debounceMs = Math.max(150, 350 - q.length * 50);
-
-    debounceTimer = setTimeout(async () => {
-      try {
-        results = await searchSkillsAPI(q);
-        selectedIndex = 0;
-      } catch {
-        results = [];
-      } finally {
-        loading = false;
-        debounceTimer = null;
-        render();
-      }
-    }, debounceMs);
-  }
-
-  // Trigger initial search if there's a query, then render
-  if (initialQuery) {
-    triggerSearch(initialQuery);
-  }
-  render();
-
-  return new Promise((resolve) => {
-    function cleanup(): void {
-      process.stdin.removeListener('keypress', handleKeypress);
-      if (process.stdin.isTTY) {
-        process.stdin.setRawMode(false);
-      }
-      if (vtSupported) {
-        process.stdout.write(SHOW_CURSOR);
-      }
-      // Pause stdin to fully release it for child processes
-      process.stdin.pause();
-    }
-
-    function handleKeypress(_ch: string | undefined, key: readline.Key): void {
-      if (!key) return;
-
-      if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
-        // Cancel
-        cleanup();
-        resolve(null);
-        return;
-      }
-
-      if (key.name === 'return') {
-        // Submit
-        cleanup();
-        resolve(results[selectedIndex] || null);
-        return;
-      }
-
-      if (key.name === 'up') {
-        selectedIndex = Math.max(0, selectedIndex - 1);
-        render();
-        return;
-      }
-
-      if (key.name === 'down') {
-        selectedIndex = Math.min(Math.max(0, results.length - 1), selectedIndex + 1);
-        render();
-        return;
-      }
-
-      if (key.name === 'backspace') {
-        if (query.length > 0) {
-          query = query.slice(0, -1);
-          triggerSearch(query);
-        }
-        return;
-      }
-
-      // Regular character input
-      if (key.sequence && !key.ctrl && !key.meta && key.sequence.length === 1) {
-        const char = key.sequence;
-        if (char >= ' ' && char <= '~') {
-          query += char;
-          triggerSearch(query);
-        }
-      }
-    }
-
-    process.stdin.on('keypress', handleKeypress);
+// Interactive skill search, backed by the shared fzf-style prompt.
+async function runSearchPrompt(): Promise<SearchSkill | null> {
+  return interactiveSearch<SearchSkill>({
+    label: 'Search skills:',
+    minChars: 2,
+    emptyMessage: 'No skills found',
+    search: (q) => searchSkillsAPI(q),
+    renderRow: (skill, selected) => {
+      const name = selected ? `${BOLD}${skill.name}${RESET}` : `${TEXT}${skill.name}${RESET}`;
+      const source = skill.source ? ` ${DIM}${skill.source}${RESET}` : '';
+      const installs = formatInstalls(skill.installs);
+      const installsBadge = installs ? ` ${CYAN}${installs}${RESET}` : '';
+      return `${name}${source}${installsBadge}`;
+    },
   });
 }
 
