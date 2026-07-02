@@ -66,7 +66,7 @@ Returns detail for a single skill. Two URL forms are supported:
 
 ### `GET /api/plugins/search`
 
-Search for plugins — curated bundles of skills defined by a `plugins/<name>/plugin.yaml` manifest in a repository. Used by `skills plugin search`.
+Search for plugins — curated bundles of skills defined by a `plugins/<name>/plugin.yaml` manifest in a repository. Used by `skills plugin search`. Uses semantic (vector) search when the query can be embedded, falling back to fuzzy text search otherwise — the same two-tier strategy as `GET /api/search`.
 
 **Query parameters**
 
@@ -79,6 +79,7 @@ Search for plugins — curated bundles of skills defined by a `plugins/<name>/pl
 ```json
 {
   "query": "pr review",
+  "searchType": "semantic",
   "plugins": [
     {
       "name": "pbi-to-pr-loop",
@@ -100,6 +101,7 @@ Search for plugins — curated bundles of skills defined by a `plugins/<name>/pl
 |-------|------|----------|-------------|
 | `plugins` | array | yes | Array of plugin results. |
 | `query` | string | no | The search query that produced these results. |
+| `searchType` | string | no | Search strategy used: `"semantic"`, `"fuzzy"`, or `"all"` (empty query). |
 | `count` | number | no | Total number of results returned. |
 | `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
 
