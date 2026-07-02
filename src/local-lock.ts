@@ -35,6 +35,8 @@ export interface LocalSkillLockEntry {
   computedHash: string;
   /** Stable hook identity key (e.g. "owner/repo/skillName") — stored so project-scoped removes can unref prompt hooks */
   skillRef?: string;
+  /** Name of the plugin bundle this skill was installed as part of, if any. Lets `plugin list/remove/update` find project-scoped plugins. */
+  pluginName?: string;
 }
 
 /**
