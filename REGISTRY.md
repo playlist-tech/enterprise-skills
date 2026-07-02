@@ -55,6 +55,60 @@ Search for skills by keyword.
 | `installs` | number | yes | Install count. Use `0` if not tracked. |
 | `source` | string | yes | Repository source in `{org}/{repo}` format. |
 
+### `GET /api/plugins/search`
+
+Search for plugins (curated bundles of skills) by keyword. Uses semantic (vector)
+search when the query can be embedded, falling back to fuzzy text search
+otherwise — the same two-tier strategy as `GET /api/search`.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Search query. If omitted or empty, returns all plugins. |
+
+**Response**
+
+```json
+{
+  "query": "code review",
+  "searchType": "semantic",
+  "plugins": [
+    {
+      "name": "code-review-suite",
+      "description": "Bundle of code review skills",
+      "source": "playlist-tech/gen-ai-skills",
+      "version": "0.1.0",
+      "installs": 0,
+      "skills": ["ios-review", "kotlin-review"]
+    }
+  ],
+  "count": 1,
+  "duration_ms": 42
+}
+```
+
+**Envelope fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | no | The search query that produced these results. |
+| `searchType` | string | no | Search strategy used: `"semantic"`, `"fuzzy"`, or `"all"` (empty query). |
+| `plugins` | array | yes | Array of plugin results. |
+| `count` | number | no | Total number of results returned. |
+| `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
+
+**Plugin fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Plugin name (the `@<name>` used in `plugin install`). |
+| `description` | string | no | Human-readable description. |
+| `source` | string | yes | Repository source in `{org}/{repo}` format. |
+| `version` | string \| null | no | Plugin version from `plugin.yaml`, if any. |
+| `installs` | number | yes | Install count. Use `0` if not tracked. |
+| `skills` | array | no | Member skill names bundled by the plugin. |
+
 ### GET Skill Details
 
 Returns detail for a single skill. Two URL forms are supported:
