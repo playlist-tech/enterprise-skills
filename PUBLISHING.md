@@ -4,12 +4,12 @@ This is an enterprise fork of [vercel-labs/skills](https://github.com/vercel-lab
 
 ## Versioning convention
 
-Versions follow the pattern `<upstream-version>-enterprise.<n>`:
+Versions follow the pattern `<upstream-version>-enterprise.<n>`, where `<n>` starts at `1` for each new upstream base (not `0`):
 
 ```
-1.5.6-enterprise.0   # first enterprise release based on upstream 1.5.6
-1.5.6-enterprise.1   # enterprise-only patch on the same upstream base
-1.5.7-enterprise.0   # after syncing upstream 1.5.7
+1.5.6-enterprise.1   # first enterprise release based on upstream 1.5.6
+1.5.6-enterprise.2   # enterprise-only patch on the same upstream base
+1.5.7-enterprise.1   # after syncing upstream 1.5.7
 ```
 
 Never publish a version that doesn't include the `-enterprise.<n>` prerelease suffix — that namespace belongs to upstream.
@@ -57,7 +57,7 @@ Most features should be upstreamable to [vercel-labs/skills](https://github.com/
    ```
 
 6. **Merge into `enterprise`** without waiting for upstream to accept
-7. **Bump `package.json` version** on `enterprise` (e.g. `1.5.6-enterprise.0` → `1.5.6-enterprise.1`) and push
+7. **Bump `package.json` version** on `enterprise` (e.g. `1.5.6-enterprise.1` → `1.5.6-enterprise.2`) and push — this bump commit is required before tagging (see Release steps)
 8. **Tag and release** as normal
 9. **When upstream merges**: the feature comes back naturally on the next upstream sync — no duplicate work needed
 
@@ -80,10 +80,12 @@ Most features should be upstreamable to [vercel-labs/skills](https://github.com/
 
 ## Release steps
 
+> **Always bump `package.json` before tagging.** The `publish-enterprise` workflow publishes whatever version is in `package.json` at the tagged commit — it does **not** read the version from the tag name. If you tag without bumping, the workflow tries to republish the current version and npm rejects it (a version can never be published twice), so the release silently fails. Never tag a commit whose `package.json` version isn't the one you intend to publish. The steps below are ordered bump → commit → tag for exactly this reason.
+
 1. **Set the version** manually in `package.json` — do not use `npm version` for enterprise releases, as it may clobber the prerelease label:
 
    ```bash
-   # Example: bumping from 1.5.6-enterprise.0 to 1.5.6-enterprise.1
+   # Example: bumping from 1.5.6-enterprise.1 to 1.5.6-enterprise.2
    # Edit "version" in package.json directly, then:
    pnpm install   # updates pnpm-lock.yaml with new root package version
    ```
@@ -102,18 +104,20 @@ Most features should be upstreamable to [vercel-labs/skills](https://github.com/
 
    ```bash
    git add package.json pnpm-lock.yaml
-   git commit -m "Release 1.5.6-enterprise.1"
+   git commit -m "Release 1.5.6-enterprise.2"
    git push
    ```
 
-4. **Tag and push to trigger the pipeline**:
+4. **Tag the release commit and push that single tag** to trigger the pipeline:
 
    ```bash
-   git tag v1.5.6-enterprise.1
-   git push --tags
+   git tag v1.5.6-enterprise.2
+   git push origin v1.5.6-enterprise.2   # push the one tag, NOT `git push --tags`
    ```
 
    Pushing a tag matching `v*-enterprise.*` triggers the `publish-enterprise` GitHub Actions workflow, which builds and publishes to npm via OIDC trusted publishing. No npm credentials are needed locally.
+
+   > **Push only the new tag by name.** `git push --tags` pushes every local tag at once, and GitHub silently skips workflow triggers when more than 3 tags arrive in a single push — so the publish would never run. Always push the single release tag.
 
 ## Release candidates
 
@@ -127,7 +131,7 @@ To publish a pre-release for testing before bumping the official version, use an
    git commit -m "rc: 1.5.6-enterprise.1-rc.0"
    git push
    git tag v1.5.6-enterprise.1-rc.0
-   git push --tags
+   git push origin v1.5.6-enterprise.1-rc.0   # single tag, NOT `git push --tags`
    ```
 
    The workflow publishes it under the `latest` dist-tag. Because the version string contains `-rc.`, consumers on a pinned version won't be affected — only those who explicitly install `@latest` will get it. Install a specific RC with:
@@ -159,4 +163,4 @@ git push origin enterprise
 
 **Why not `main → enterprise`?** Fork `main` is ahead of upstream because it carries GitHub Actions workflow files that must live on the default branch. Merging `main` into `enterprise` would pull those in redundantly. Merge `upstream/main` directly into `enterprise` instead.
 
-After syncing `enterprise`, update the version in `package.json` to `<new-upstream-version>-enterprise.0` and follow the release steps above.
+After syncing `enterprise`, update the version in `package.json` to `<new-upstream-version>-enterprise.1` (numbering restarts at `.1` for the new upstream base) and follow the release steps above.
