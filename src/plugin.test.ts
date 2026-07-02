@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { mkdirSync, rmSync } from 'fs';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { runCli } from './test-utils.ts';
 import { normalizePluginManifest, manifestSkillNames, runPlugin } from './plugin.ts';
 import { runAdd } from './add.ts';
@@ -124,6 +124,34 @@ describe('plugin command dispatch', () => {
     try {
       const result = runCli(['plugin', 'list'], dir, STRIP);
       expect(result.stdout).toContain('No plugins installed');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: a plugin installed at project scope records its pluginName in
+  // the local skills-lock.json, and `plugin list` must find it there — not only
+  // in the global lock.
+  it('lists a project-scoped plugin from the local lock', () => {
+    const dir = join(tmpdir(), `skills-plugin-local-${Date.now()}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      const localLock = {
+        version: 1,
+        skills: {
+          'skill-finder': {
+            source: 'playlist-tech/gen-ai-skills',
+            sourceType: 'github',
+            computedHash: 'abc123',
+            pluginName: 'poc-platform-tools',
+          },
+        },
+      };
+      writeFileSync(join(dir, 'skills-lock.json'), JSON.stringify(localLock, null, 2));
+      const result = runCli(['plugin', 'list'], dir, STRIP);
+      expect(result.stdout).toContain('poc-platform-tools');
+      expect(result.stdout).toContain('skill-finder');
+      expect(result.stdout).not.toContain('No plugins installed');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -1897,6 +1897,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 ...(skillPathValue && { skillPath: skillPathValue }),
                 computedHash,
                 ...(recordSubagents && { subagents: eveSubagents }),
+                ...(skill.pluginName && { pluginName: skill.pluginName }),
               },
               cwd
             );
