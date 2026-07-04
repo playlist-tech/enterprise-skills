@@ -87,7 +87,8 @@ Search for plugins — curated bundles of skills defined by a `plugins/<name>/pl
       "source": "vercel-labs/skills",
       "version": "0.2.0",
       "installs": 0,
-      "skills": ["write-plan", "review-plan", "implement-plan"]
+      "skills": ["write-plan", "review-plan", "implement-plan"],
+      "tags": ["delivery", "automation"]
     }
   ],
   "count": 1,
@@ -115,6 +116,7 @@ Search for plugins — curated bundles of skills defined by a `plugins/<name>/pl
 | `version` | string | no | Plugin manifest version (semver). |
 | `installs` | number | no | Install count. Use `0` if not tracked. |
 | `skills` | array | no | Member skill names bundled by the plugin. |
+| `tags` | array | no | Discovery keywords for the plugin (e.g. from the plugin manifest's `tags`/`keywords`). Folded into search matching. |
 
 A registry that does not implement this endpoint should return `404`; the CLI treats that as "plugin search not available" and still supports installing a known plugin by name.
 
