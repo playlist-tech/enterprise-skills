@@ -57,9 +57,10 @@ Search for skills by keyword.
 
 ### `GET /api/bundles/search`
 
-Search for bundles (curated sets of skills) by keyword. Uses semantic (vector)
-search when the query can be embedded, falling back to fuzzy text search
-otherwise — the same two-tier strategy as `GET /api/search`.
+Search for bundles (curated sets of skills defined by a `bundles/<name>/bundle.yaml`
+manifest in a repository) by keyword. Uses semantic (vector) search when the
+query can be embedded, falling back to fuzzy text search otherwise — the same
+two-tier strategy as `GET /api/search`. Used by `skills bundle search`.
 
 **Query parameters**
 
@@ -80,7 +81,8 @@ otherwise — the same two-tier strategy as `GET /api/search`.
       "source": "playlist-tech/gen-ai-skills",
       "version": "0.1.0",
       "installs": 0,
-      "skills": ["ios-review", "kotlin-review"]
+      "skills": ["skills/golden/ios-review", "skills/golden/kotlin-review"],
+      "tags": ["code-review", "quality"]
     }
   ],
   "count": 1,
@@ -107,7 +109,10 @@ otherwise — the same two-tier strategy as `GET /api/search`.
 | `source` | string | yes | Repository source in `{org}/{repo}` format. |
 | `version` | string \| null | no | Bundle version from `bundle.yaml`, if any. |
 | `installs` | number | yes | Install count. Use `0` if not tracked. |
-| `skills` | array | no | Member skill paths declared by the bundle. |
+| `skills` | array | no | Member skill paths declared by the bundle (repo-relative). |
+| `tags` | array | no | Discovery keywords for the bundle, from the manifest's `tags`. Folded into semantic and fuzzy search matching. |
+
+A registry that does not implement this endpoint should return `404`; the CLI treats that as "bundle search not available" and still supports installing a known bundle by name.
 
 ### GET Skill Details
 
@@ -117,58 +122,6 @@ Returns detail for a single skill. Two URL forms are supported:
 - `GET /{skillId}` — look up by the `skillId` field (e.g. `find-skills`, or a full path slug like `{source}/{name}` for self-hosted registries)
 
 **Response**: the full skill record. Shape is registry-defined; the CLI does not currently consume this endpoint directly but links to it in terminal output.
-
-### `GET /api/bundles/search`
-
-Search for bundles — curated sets of skills defined by a `bundles/<name>/bundle.yaml` manifest in a repository. Used by `skills bundle search`.
-
-**Query parameters**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `q` | string | Search query. If omitted or empty, returns all bundles. |
-
-**Response**
-
-```json
-{
-  "query": "pr review",
-  "bundles": [
-    {
-      "name": "pbi-to-pr-loop",
-      "description": "Autonomous PBI → plan → review → implement → PR loop.",
-      "source": "vercel-labs/skills",
-      "version": "0.2.0",
-      "installs": 0,
-      "skills": ["write-plan", "review-plan", "implement-plan"]
-    }
-  ],
-  "count": 1,
-  "duration_ms": 8
-}
-```
-
-**Envelope fields**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `bundles` | array | yes | Array of bundle results. |
-| `query` | string | no | The search query that produced these results. |
-| `count` | number | no | Total number of results returned. |
-| `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
-
-**Bundle fields**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | yes | Bundle name. Used to install the bundle via `skills bundle install {source}@{name}`. |
-| `description` | string | no | Human-readable summary shown in search results. |
-| `source` | string | no | Repository the bundle lives in, in `{org}/{repo}` format. When present, the CLI can print the exact `bundle install {source}@{name}` command. |
-| `version` | string | no | Bundle manifest version (semver). |
-| `installs` | number | no | Install count. Use `0` if not tracked. |
-| `skills` | array | no | Member skill paths declared by the bundle. |
-
-A registry that does not implement this endpoint should return `404`; the CLI treats that as "bundle search not available" and still supports installing a known bundle by name.
 
 ## Self-hosting
 
