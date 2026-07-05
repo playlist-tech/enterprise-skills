@@ -55,9 +55,9 @@ Search for skills by keyword.
 | `installs` | number | yes | Install count. Use `0` if not tracked. |
 | `source` | string | yes | Repository source in `{org}/{repo}` format. |
 
-### `GET /api/plugins/search`
+### `GET /api/bundles/search`
 
-Search for plugins (curated bundles of skills) by keyword. Uses semantic (vector)
+Search for bundles (curated sets of skills) by keyword. Uses semantic (vector)
 search when the query can be embedded, falling back to fuzzy text search
 otherwise — the same two-tier strategy as `GET /api/search`.
 
@@ -65,7 +65,7 @@ otherwise — the same two-tier strategy as `GET /api/search`.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `q` | string | Search query. If omitted or empty, returns all plugins. |
+| `q` | string | Search query. If omitted or empty, returns all bundles. |
 
 **Response**
 
@@ -73,7 +73,7 @@ otherwise — the same two-tier strategy as `GET /api/search`.
 {
   "query": "code review",
   "searchType": "semantic",
-  "plugins": [
+  "bundles": [
     {
       "name": "code-review-suite",
       "description": "Bundle of code review skills",
@@ -94,20 +94,20 @@ otherwise — the same two-tier strategy as `GET /api/search`.
 |-------|------|----------|-------------|
 | `query` | string | no | The search query that produced these results. |
 | `searchType` | string | no | Search strategy used: `"semantic"`, `"fuzzy"`, or `"all"` (empty query). |
-| `plugins` | array | yes | Array of plugin results. |
+| `bundles` | array | yes | Array of bundle results. |
 | `count` | number | no | Total number of results returned. |
 | `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
 
-**Plugin fields**
+**Bundle fields**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | yes | Plugin name (the `@<name>` used in `plugin install`). |
+| `name` | string | yes | Bundle name (the `@<name>` used in `bundle install`). |
 | `description` | string | no | Human-readable description. |
 | `source` | string | yes | Repository source in `{org}/{repo}` format. |
-| `version` | string \| null | no | Plugin version from `plugin.yaml`, if any. |
+| `version` | string \| null | no | Bundle version from `bundle.yaml`, if any. |
 | `installs` | number | yes | Install count. Use `0` if not tracked. |
-| `skills` | array | no | Member skill names bundled by the plugin. |
+| `skills` | array | no | Member skill paths declared by the bundle. |
 
 ### GET Skill Details
 
@@ -118,22 +118,22 @@ Returns detail for a single skill. Two URL forms are supported:
 
 **Response**: the full skill record. Shape is registry-defined; the CLI does not currently consume this endpoint directly but links to it in terminal output.
 
-### `GET /api/plugins/search`
+### `GET /api/bundles/search`
 
-Search for plugins — curated bundles of skills defined by a `plugins/<name>/plugin.yaml` manifest in a repository. Used by `skills plugin search`.
+Search for bundles — curated sets of skills defined by a `bundles/<name>/bundle.yaml` manifest in a repository. Used by `skills bundle search`.
 
 **Query parameters**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `q` | string | Search query. If omitted or empty, returns all plugins. |
+| `q` | string | Search query. If omitted or empty, returns all bundles. |
 
 **Response**
 
 ```json
 {
   "query": "pr review",
-  "plugins": [
+  "bundles": [
     {
       "name": "pbi-to-pr-loop",
       "description": "Autonomous PBI → plan → review → implement → PR loop.",
@@ -152,23 +152,23 @@ Search for plugins — curated bundles of skills defined by a `plugins/<name>/pl
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `plugins` | array | yes | Array of plugin results. |
+| `bundles` | array | yes | Array of bundle results. |
 | `query` | string | no | The search query that produced these results. |
 | `count` | number | no | Total number of results returned. |
 | `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
 
-**Plugin fields**
+**Bundle fields**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | yes | Plugin name. Used to install the plugin via `skills plugin install {source}@{name}`. |
+| `name` | string | yes | Bundle name. Used to install the bundle via `skills bundle install {source}@{name}`. |
 | `description` | string | no | Human-readable summary shown in search results. |
-| `source` | string | no | Repository the plugin lives in, in `{org}/{repo}` format. When present, the CLI can print the exact `plugin install {source}@{name}` command. |
-| `version` | string | no | Plugin manifest version (semver). |
+| `source` | string | no | Repository the bundle lives in, in `{org}/{repo}` format. When present, the CLI can print the exact `bundle install {source}@{name}` command. |
+| `version` | string | no | Bundle manifest version (semver). |
 | `installs` | number | no | Install count. Use `0` if not tracked. |
-| `skills` | array | no | Member skill names bundled by the plugin. |
+| `skills` | array | no | Member skill paths declared by the bundle. |
 
-A registry that does not implement this endpoint should return `404`; the CLI treats that as "plugin search not available" and still supports installing a known plugin by name.
+A registry that does not implement this endpoint should return `404`; the CLI treats that as "bundle search not available" and still supports installing a known bundle by name.
 
 ## Self-hosting
 

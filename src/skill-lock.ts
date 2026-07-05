@@ -33,7 +33,7 @@ export interface SkillLockEntry {
   installedAt: string;
   /** ISO timestamp when the skill was last updated */
   updatedAt: string;
-  /** Name of the plugin this skill belongs to (if any) */
+  /** Bundle (or native plugin grouping) this skill belongs to, if any. Field name kept for upstream and pre-rename lockfile compatibility. */
   pluginName?: string;
   /** Stable hook identity key (e.g. "owner/repo/skillName") stored at install time for hook unwiring */
   skillRef?: string;
