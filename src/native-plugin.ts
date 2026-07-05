@@ -19,6 +19,7 @@
  * lives in hub recipe data, patchable without an npm release.
  */
 
+import * as p from '@clack/prompts';
 import pc from 'picocolors';
 
 import { envConfig } from './env-config.ts';
@@ -196,6 +197,40 @@ async function resolveRecipeAgent(flagValue: string | undefined): Promise<string
   return AGENT_TYPE_TO_RECIPE[agentType] ?? null;
 }
 
+/**
+ * Ask the catalog which agents have an install recipe for this plugin. Reuses
+ * the install endpoint's agent-less 400 response (`availableAgents`) so the
+ * picker stays data-driven — the CLI hardcodes no agent list. Returns null
+ * when the API is unreachable or the plugin/agents are unknown.
+ */
+async function fetchAvailableAgents(name: string): Promise<string[] | null> {
+  const url = `${envConfig.apiBase}/api/plugins/${encodeURIComponent(name)}/install`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
+    if (res.status !== 400) return null;
+    const body = (await res.json()) as { availableAgents?: string[] };
+    return body.availableAgents?.length ? body.availableAgents : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Interactive agent picker. Returns the chosen agent, or null if cancelled/unavailable. */
+async function promptForAgent(name: string): Promise<string | null> {
+  const available = await fetchAvailableAgents(name);
+  if (!available) return null;
+
+  const selected = await p.select({
+    message: `Install ${name} for which agent?`,
+    options: available.map((agent) => ({ value: agent, label: agent })),
+  });
+  if (p.isCancel(selected)) {
+    console.log(pc.dim('Install cancelled.'));
+    process.exit(0);
+  }
+  return selected as string;
+}
+
 function parseInstallArgs(args: string[]): { name?: string; agent?: string } {
   let name: string | undefined;
   let agent: string | undefined;
@@ -220,7 +255,14 @@ async function runPluginInstall(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const agent = await resolveRecipeAgent(agentFlag);
+  let agent = await resolveRecipeAgent(agentFlag);
+
+  // No flag and no detected agent: in a real terminal, offer a picker fed by
+  // the catalog's recipe list instead of erroring.
+  if (!agent && process.stdin.isTTY && !(await isRunningInAgent())) {
+    agent = await promptForAgent(name);
+  }
+
   if (!agent) {
     console.error(pc.red('Could not determine the target agent.'));
     console.error(
