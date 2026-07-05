@@ -15,8 +15,8 @@
  * right skill is installed even when names collide across repos or tiers.
  * Everything downstream (cloning, agent selection, symlinking, lockfile
  * writing, and list/remove grouping) is reused unchanged — the bundle tag is
- * recorded on each lock entry as `pluginName` (the field name is kept for
- * upstream and pre-rename lockfile compatibility), which list/remove/update
+ * recorded on each lock entry as `bundleName` (distinct from `pluginName`,
+ * which upstream's plugin-manifest grouping owns), which list/remove/update
  * group on.
  */
 
@@ -237,8 +237,6 @@ interface InstalledBundle {
  * Group installed skills by the bundle that installed them, across BOTH the
  * global and project-scoped locks. Bundles install to whichever scope the user
  * chose, so both must be consulted or `list`/`remove`/`update` would miss them.
- * Reads the lock's `pluginName` tag — the pre-rename field name, kept for
- * upstream and existing-lockfile compatibility.
  */
 async function installedByBundle(): Promise<Map<string, InstalledBundle>> {
   const byBundle = new Map<string, InstalledBundle>();
@@ -255,15 +253,15 @@ async function installedByBundle(): Promise<Map<string, InstalledBundle>> {
 
   const globalLocked = await getAllLockedSkills();
   for (const [skillName, entry] of Object.entries(globalLocked)) {
-    if (entry.pluginName) {
-      record(entry.pluginName, { skillName, skillPath: entry.skillPath, global: true });
+    if (entry.bundleName) {
+      record(entry.bundleName, { skillName, skillPath: entry.skillPath, global: true });
     }
   }
 
   const localLock = await readLocalLock();
   for (const [skillName, entry] of Object.entries(localLock.skills)) {
-    if (entry.pluginName) {
-      record(entry.pluginName, { skillName, skillPath: entry.skillPath, global: false });
+    if (entry.bundleName) {
+      record(entry.bundleName, { skillName, skillPath: entry.skillPath, global: false });
     }
   }
 

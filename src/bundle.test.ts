@@ -207,9 +207,10 @@ describe('bundle command dispatch', () => {
     expect(result.exitCode).toBe(1);
   });
 
-  // Locks written by the pre-rename `plugin` command tag members with
-  // `pluginName`; `bundle list` must keep finding them — in both scopes.
-  it('lists a project-scoped bundle from a pre-rename local lock', () => {
+  // A bundle installed at project scope records its `bundleName` in the local
+  // skills-lock.json, and `bundle list` must find it there — not only in the
+  // global lock.
+  it('lists a project-scoped bundle from the local lock', () => {
     const dir = join(tmpdir(), `skills-bundle-local-${Date.now()}`);
     mkdirSync(dir, { recursive: true });
     try {
@@ -220,7 +221,7 @@ describe('bundle command dispatch', () => {
             source: 'playlist-tech/gen-ai-skills',
             sourceType: 'github',
             computedHash: 'abc123',
-            pluginName: 'poc-platform-tools',
+            bundleName: 'poc-platform-tools',
           },
         },
       };
@@ -229,6 +230,32 @@ describe('bundle command dispatch', () => {
       expect(result.stdout).toContain('poc-platform-tools');
       expect(result.stdout).toContain('skill-finder');
       expect(result.stdout).not.toContain('No bundles installed');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A skill grouped only by the plugin-manifest `pluginName` tag is NOT a
+  // bundle — `bundle list` must ignore it rather than surface manifest
+  // groupings (or pre-rename installs) as phantom bundles.
+  it('does not list pluginName-tagged skills as bundles', () => {
+    const dir = join(tmpdir(), `skills-bundle-plugintag-${Date.now()}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      const localLock = {
+        version: 1,
+        skills: {
+          'skill-finder': {
+            source: 'playlist-tech/gen-ai-skills',
+            sourceType: 'github',
+            computedHash: 'abc123',
+            pluginName: 'some-claude-native-plugin',
+          },
+        },
+      };
+      writeFileSync(join(dir, 'skills-lock.json'), JSON.stringify(localLock, null, 2));
+      const result = runCli(['bundle', 'list'], dir, STRIP);
+      expect(result.stdout).not.toContain('some-claude-native-plugin');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

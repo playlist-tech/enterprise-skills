@@ -147,14 +147,15 @@ export async function runList(args: string[]): Promise<void> {
   console.log(`${BOLD}${scopeLabel} Skills${RESET}`);
   console.log();
 
-  // Group skills by plugin
+  // Group skills by the bundle that installed them (or, failing that, the
+  // plugin-manifest grouping recorded at install time).
   const groupedSkills: Record<string, InstalledSkill[]> = {};
   const ungroupedSkills: InstalledSkill[] = [];
 
   for (const skill of installedSkills) {
     const lockEntry = lockedSkills[skill.name];
-    if (lockEntry?.pluginName) {
-      const group = lockEntry.pluginName;
+    if (lockEntry?.bundleName || lockEntry?.pluginName) {
+      const group = (lockEntry.bundleName ?? lockEntry.pluginName)!;
       if (!groupedSkills[group]) {
         groupedSkills[group] = [];
       }

@@ -447,9 +447,10 @@ export interface AddOptions {
   dangerouslyAcceptOpenclawRisks?: boolean;
   /**
    * Internal: when set, every installed skill is tagged with this bundle name
-   * in the lockfile so it groups under the bundle in list/remove/update.
-   * Set by the `bundle install` flow — not a user-facing CLI flag. Recorded in
-   * the lock as `pluginName` for upstream and pre-rename lockfile compatibility.
+   * in the lockfile (`bundleName`) so it groups under the bundle in
+   * list/remove/update. Set by the `bundle install` flow — not a user-facing
+   * CLI flag. Distinct from `pluginName`, which upstream's plugin-manifest
+   * grouping owns.
    */
   bundleName?: string;
   /**
@@ -1296,16 +1297,6 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       selectedSkills = selected as Skill[];
     }
 
-    // When installing as part of a bundle, tag every selected skill with the
-    // bundle name so it is recorded in the lockfile (SkillLockEntry.pluginName —
-    // the field name is kept for upstream and pre-rename lockfile
-    // compatibility) and grouped by bundle in list / remove / update.
-    if (options.bundleName) {
-      for (const skill of selectedSkills) {
-        skill.pluginName = options.bundleName;
-      }
-    }
-
     // Kick off security audit fetch early (non-blocking) so it runs
     // in parallel with agent selection, scope, and mode prompts.
     const ownerRepoForAudit = getOwnerRepo(parsed);
@@ -1603,7 +1594,9 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         results.push({
           skill: getSkillDisplayName(skill),
           agent: agents[agent].displayName,
-          pluginName: skill.pluginName,
+          // Display-only grouping for the summary: a bundle install groups
+          // under the bundle; otherwise under the plugin-manifest grouping.
+          pluginName: options.bundleName ?? skill.pluginName,
           ...result,
         });
       }
@@ -1732,6 +1725,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               skillPath: skillPathValue,
               skillFolderHash,
               pluginName: skill.pluginName,
+              bundleName: options.bundleName,
               skillRef: lockSkillRef,
             });
           } catch {
@@ -1765,6 +1759,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 computedHash,
                 skillRef: localSkillRef,
                 ...(skill.pluginName && { pluginName: skill.pluginName }),
+                ...(options.bundleName && { bundleName: options.bundleName }),
               },
               cwd
             );
