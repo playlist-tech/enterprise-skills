@@ -25,7 +25,7 @@ import {
 } from './update-source.ts';
 import { runUpdate } from './update.ts';
 import { runUse, parseUseOptions } from './use.ts';
-import { runPlugin } from './plugin.ts';
+import { runBundle } from './bundle.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -140,15 +140,15 @@ ${BOLD}Manage Skills:${RESET}
   list, ls             List installed skills
   find [query]         Search for skills interactively
 
-${BOLD}Plugins:${RESET}
-  plugin install <org>/<repo>@<name>
-                       Install a plugin's bundled skills
-  plugin list          List installed plugins and their skills
-  plugin update <org>/<repo>@<name>
-                       Re-sync a plugin to its current manifest
-  plugin remove <name> Remove an installed plugin's skills
-  plugin search [query]
-                       Search for plugins
+${BOLD}Bundles:${RESET}
+  bundle install <org>/<repo>@<name>
+                       Install a bundle's skills
+  bundle list          List installed bundles and their skills
+  bundle update <org>/<repo>@<name>
+                       Re-sync a bundle to its current manifest
+  bundle remove <name> Remove an installed bundle's skills
+  bundle search [query]
+                       Search for bundles
 
 ${BOLD}Updates:${RESET}
   update [skills...]   Update skills to latest versions (alias: upgrade)
@@ -399,14 +399,23 @@ async function main(): Promise<void> {
     case 'ls':
       await runList(restArgs);
       break;
-    case 'plugin':
-    case 'plugins':
-      // Show the logo for interactive plugin search, matching `find`/`search`.
+    case 'bundle':
+    case 'bundles':
+      // Show the logo for interactive bundle search, matching `find`/`search`.
       if (restArgs[0] === 'search' && !inAgent) {
         showLogo();
         console.log();
       }
-      await runPlugin(restArgs);
+      await runBundle(restArgs);
+      break;
+    case 'plugin':
+    case 'plugins':
+      // Renamed: `plugin` is reserved for future native-plugin support
+      // (skills + MCP + hooks); curated skill sets are now `bundle`.
+      console.error(
+        `The 'plugin' command was renamed to 'bundle'. Try: bundle ${restArgs.join(' ')}`.trimEnd()
+      );
+      process.exit(1);
       break;
     case 'check':
     case 'update':

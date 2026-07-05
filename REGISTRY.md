@@ -55,17 +55,18 @@ Search for skills by keyword.
 | `installs` | number | yes | Install count. Use `0` if not tracked. |
 | `source` | string | yes | Repository source in `{org}/{repo}` format. |
 
-### `GET /api/plugins/search`
+### `GET /api/bundles/search`
 
-Search for plugins (curated bundles of skills) by keyword. Uses semantic (vector)
-search when the query can be embedded, falling back to fuzzy text search
-otherwise — the same two-tier strategy as `GET /api/search`.
+Search for bundles (curated sets of skills defined by a `bundles/<name>/bundle.yaml`
+manifest in a repository) by keyword. Uses semantic (vector) search when the
+query can be embedded, falling back to fuzzy text search otherwise — the same
+two-tier strategy as `GET /api/search`. Used by `skills bundle search`.
 
 **Query parameters**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `q` | string | Search query. If omitted or empty, returns all plugins. |
+| `q` | string | Search query. If omitted or empty, returns all bundles. |
 
 **Response**
 
@@ -73,14 +74,14 @@ otherwise — the same two-tier strategy as `GET /api/search`.
 {
   "query": "code review",
   "searchType": "semantic",
-  "plugins": [
+  "bundles": [
     {
       "name": "code-review-suite",
       "description": "Bundle of code review skills",
       "source": "playlist-tech/gen-ai-skills",
       "version": "0.1.0",
       "installs": 0,
-      "skills": ["ios-review", "kotlin-review"],
+      "skills": ["skills/golden/ios-review", "skills/golden/kotlin-review"],
       "tags": ["code-review", "quality"]
     }
   ],
@@ -95,23 +96,23 @@ otherwise — the same two-tier strategy as `GET /api/search`.
 |-------|------|----------|-------------|
 | `query` | string | no | The search query that produced these results. |
 | `searchType` | string | no | Search strategy used: `"semantic"`, `"fuzzy"`, or `"all"` (empty query). |
-| `plugins` | array | yes | Array of plugin results. |
+| `bundles` | array | yes | Array of bundle results. |
 | `count` | number | no | Total number of results returned. |
 | `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
 
-**Plugin fields**
+**Bundle fields**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | yes | Plugin name (the `@<name>` used in `plugin install`). |
+| `name` | string | yes | Bundle name (the `@<name>` used in `bundle install`). |
 | `description` | string | no | Human-readable description. |
 | `source` | string | yes | Repository source in `{org}/{repo}` format. |
-| `version` | string \| null | no | Plugin version from `plugin.yaml`, if any. |
+| `version` | string \| null | no | Bundle version from `bundle.yaml`, if any. |
 | `installs` | number | yes | Install count. Use `0` if not tracked. |
-| `skills` | array | no | Member skill names bundled by the plugin. |
-| `tags` | array | no | Discovery keywords for the plugin, from the manifest's `tags` (generated into the Claude Code `plugin.json` `keywords`). Folded into semantic and fuzzy search matching. |
+| `skills` | array | no | Member skill paths declared by the bundle (repo-relative). |
+| `tags` | array | no | Discovery keywords for the bundle, from the manifest's `tags`. Folded into semantic and fuzzy search matching. |
 
-A registry that does not implement this endpoint should return `404`; the CLI treats that as "plugin search not available" and still supports installing a known plugin by name.
+A registry that does not implement this endpoint should return `404`; the CLI treats that as "bundle search not available" and still supports installing a known bundle by name.
 
 ### GET Skill Details
 

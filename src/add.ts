@@ -13,7 +13,12 @@ import {
 import { stripTerminalEscapes } from './sanitize.ts';
 import { searchMultiselect } from './prompts/search-multiselect.ts';
 import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
-import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
+import {
+  discoverSkills,
+  getSkillDisplayName,
+  filterSkills,
+  resolveSkillsByPath,
+} from './skills.ts';
 import {
   installSkillForAgent,
   installBlobSkillForAgent,
@@ -441,11 +446,21 @@ export interface AddOptions {
   copy?: boolean;
   dangerouslyAcceptOpenclawRisks?: boolean;
   /**
-   * Internal: when set, every installed skill is tagged with this plugin name
-   * in the lockfile so it groups under the plugin in list/remove/update.
-   * Set by the `plugin install` flow — not a user-facing CLI flag.
+   * Internal: when set, every installed skill is tagged with this bundle name
+   * in the lockfile (`bundleName`) so it groups under the bundle in
+   * list/remove/update. Set by the `bundle install` flow — not a user-facing
+   * CLI flag. Distinct from `pluginName`, which upstream's plugin-manifest
+   * grouping owns.
    */
-  pluginName?: string;
+  bundleName?: string;
+  /**
+   * Internal: exact repo-relative skill directory paths to install, bypassing
+   * name-based discovery and filtering entirely. Set by the `bundle install`
+   * flow so member resolution never depends on skill names (which can collide
+   * across repos). Forces a clone (no blob fast-path) so each path resolves
+   * against the actual repository tree.
+   */
+  skillPaths?: string[];
 }
 
 /**
@@ -1060,11 +1075,13 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       spinner.stop('Local path validated');
 
       spinner.start('Discovering skills...');
-      skills = await discoverSkills(parsed.localPath!, parsed.subpath, {
-        includeInternal,
-        fullDepth: options.fullDepth,
-      });
-    } else if (parsed.type === 'github' && !options.fullDepth) {
+      skills = options.skillPaths?.length
+        ? await resolveSkillsByPath(parsed.localPath!, options.skillPaths)
+        : await discoverSkills(parsed.localPath!, parsed.subpath, {
+            includeInternal,
+            fullDepth: options.fullDepth,
+          });
+    } else if (parsed.type === 'github' && !options.fullDepth && !options.skillPaths?.length) {
       // Try blob-based fast install for GitHub sources
       // Only enabled for allowlisted orgs; skip for --full-depth
       const BLOB_ALLOWED_OWNERS = ['vercel', 'vercel-labs', 'heygen-com'];
@@ -1100,16 +1117,21 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         });
       }
     } else {
-      // GitLab, git URL, or --full-depth: always clone
+      // GitLab, git URL, --full-depth, or path-pinned (bundle) install: always clone
       spinner.start('Cloning repository...');
       tempDir = await cloneRepo(parsed.url, parsed.ref);
       spinner.stop('Repository cloned');
 
       spinner.start('Discovering skills...');
-      skills = await discoverSkills(tempDir, parsed.subpath, {
-        includeInternal,
-        fullDepth: options.fullDepth,
-      });
+      // Path-pinned installs resolve each skill at its exact repo-relative
+      // coordinate instead of scanning — the manifest, not discovery
+      // heuristics or names, decides what gets installed.
+      skills = options.skillPaths?.length
+        ? await resolveSkillsByPath(tempDir, options.skillPaths)
+        : await discoverSkills(tempDir, parsed.subpath, {
+            includeInternal,
+            fullDepth: options.fullDepth,
+          });
     }
 
     if (skills.length === 0) {
@@ -1177,7 +1199,14 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     let selectedSkills: Skill[];
 
-    if (options.skill?.includes('*')) {
+    if (options.skillPaths?.length) {
+      // Path-pinned (bundle) install: `skills` was already resolved to exactly
+      // the manifest's coordinates — nothing to filter or prompt for.
+      selectedSkills = skills;
+      p.log.info(
+        `Selected ${selectedSkills.length} skill${selectedSkills.length !== 1 ? 's' : ''}: ${selectedSkills.map((s) => pc.cyan(getSkillDisplayName(s))).join(', ')}`
+      );
+    } else if (options.skill?.includes('*')) {
       // --skill '*' selects all skills
       selectedSkills = skills;
       p.log.info(`Installing all ${skills.length} skills`);
@@ -1266,15 +1295,6 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       }
 
       selectedSkills = selected as Skill[];
-    }
-
-    // When installing as part of a plugin, tag every selected skill with the
-    // plugin name so it is recorded in the lockfile (SkillLockEntry.pluginName)
-    // and grouped by plugin in list / remove / update.
-    if (options.pluginName) {
-      for (const skill of selectedSkills) {
-        skill.pluginName = options.pluginName;
-      }
     }
 
     // Kick off security audit fetch early (non-blocking) so it runs
@@ -1574,7 +1594,9 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         results.push({
           skill: getSkillDisplayName(skill),
           agent: agents[agent].displayName,
-          pluginName: skill.pluginName,
+          // Display-only grouping for the summary: a bundle install groups
+          // under the bundle; otherwise under the plugin-manifest grouping.
+          pluginName: options.bundleName ?? skill.pluginName,
           ...result,
         });
       }
@@ -1703,6 +1725,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               skillPath: skillPathValue,
               skillFolderHash,
               pluginName: skill.pluginName,
+              bundleName: options.bundleName,
               skillRef: lockSkillRef,
             });
           } catch {
@@ -1736,6 +1759,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
                 computedHash,
                 skillRef: localSkillRef,
                 ...(skill.pluginName && { pluginName: skill.pluginName }),
+                ...(options.bundleName && { bundleName: options.bundleName }),
               },
               cwd
             );
