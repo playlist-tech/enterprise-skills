@@ -64,15 +64,15 @@ Returns detail for a single skill. Two URL forms are supported:
 
 **Response**: the full skill record. Shape is registry-defined; the CLI does not currently consume this endpoint directly but links to it in terminal output.
 
-### `GET /api/plugins/search`
+### `GET /api/bundles/search`
 
-Search for plugins — curated bundles of skills defined by a `plugins/<name>/plugin.yaml` manifest in a repository. Used by `skills plugin search`. Uses semantic (vector) search when the query can be embedded, falling back to fuzzy text search otherwise — the same two-tier strategy as `GET /api/search`.
+Search for bundles — curated sets of skills defined by a `bundles/<name>/bundle.yaml` manifest in a repository. Used by `skills bundle search`. Uses semantic (vector) search when the query can be embedded, falling back to fuzzy text search otherwise — the same two-tier strategy as `GET /api/search`.
 
 **Query parameters**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `q` | string | Search query. If omitted or empty, returns all plugins. |
+| `q` | string | Search query. If omitted or empty, returns all bundles. |
 
 **Response**
 
@@ -80,14 +80,14 @@ Search for plugins — curated bundles of skills defined by a `plugins/<name>/pl
 {
   "query": "pr review",
   "searchType": "semantic",
-  "plugins": [
+  "bundles": [
     {
       "name": "pbi-to-pr-loop",
       "description": "Autonomous PBI → plan → review → implement → PR loop.",
       "source": "vercel-labs/skills",
       "version": "0.2.0",
       "installs": 0,
-      "skills": ["write-plan", "review-plan", "implement-plan"],
+      "skills": ["skills/community/write-plan", "skills/community/review-plan", "skills/community/implement-plan"],
       "tags": ["delivery", "automation"]
     }
   ],
@@ -100,25 +100,25 @@ Search for plugins — curated bundles of skills defined by a `plugins/<name>/pl
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `plugins` | array | yes | Array of plugin results. |
+| `bundles` | array | yes | Array of bundle results. |
 | `query` | string | no | The search query that produced these results. |
 | `searchType` | string | no | Search strategy used: `"semantic"`, `"fuzzy"`, or `"all"` (empty query). |
 | `count` | number | no | Total number of results returned. |
 | `duration_ms` | number | no | Time taken to execute the search in milliseconds. |
 
-**Plugin fields**
+**Bundle fields**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | yes | Plugin name. Used to install the plugin via `skills plugin install {source}@{name}`. |
+| `name` | string | yes | Bundle name. Used to install the bundle via `skills bundle install {source}@{name}`. |
 | `description` | string | no | Human-readable summary shown in search results. |
-| `source` | string | no | Repository the plugin lives in, in `{org}/{repo}` format. When present, the CLI can print the exact `plugin install {source}@{name}` command. |
-| `version` | string | no | Plugin manifest version (semver). |
+| `source` | string | no | Repository the bundle lives in, in `{org}/{repo}` format. When present, the CLI can print the exact `bundle install {source}@{name}` command. |
+| `version` | string | no | Bundle manifest version (semver). |
 | `installs` | number | no | Install count. Use `0` if not tracked. |
-| `skills` | array | no | Member skill names bundled by the plugin. |
-| `tags` | array | no | Discovery keywords for the plugin (e.g. from the plugin manifest's `tags`/`keywords`). Folded into search matching. |
+| `skills` | array | no | Member skill paths declared by the bundle (repo-relative, e.g. `skills/community/write-plan`). |
+| `tags` | array | no | Discovery keywords for the bundle (e.g. from the bundle manifest's `tags`). Folded into search matching. |
 
-A registry that does not implement this endpoint should return `404`; the CLI treats that as "plugin search not available" and still supports installing a known plugin by name.
+A registry that does not implement this endpoint should return `404`; the CLI treats that as "bundle search not available" and still supports installing a known bundle by name.
 
 ## Self-hosting
 
