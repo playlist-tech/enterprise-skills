@@ -40,8 +40,10 @@ export interface LocalSkillLockEntry {
    * non-Eve installs and for plain Eve root installs (treated as `['']`).
    */
   subagents?: string[];
-  /** Name of the plugin bundle this skill was installed as part of, if any. Lets `plugin list/remove/update` find project-scoped plugins. */
+  /** Name of the plugin this skill belongs to (if any) */
   pluginName?: string;
+  /** Bundle this skill was installed as part of (if any). Lets `bundle list/remove/update` find project-scoped bundles; distinct from `pluginName`, which the plugin-manifest grouping owns. */
+  bundleName?: string;
 }
 
 /**

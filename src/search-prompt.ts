@@ -1,7 +1,7 @@
 import * as readline from 'readline';
 
 // A small fzf-style interactive search prompt shared by `find` (skills) and
-// `plugin search`. The caller supplies how to search and how to render a row;
+// `bundle search`. The caller supplies how to search and how to render a row;
 // this module owns the terminal handling (raw keypresses, live re-render,
 // debounced queries) and returns the selected item (or null if cancelled).
 
