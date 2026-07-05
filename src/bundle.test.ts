@@ -199,11 +199,12 @@ describe('bundle command dispatch', () => {
     }
   });
 
-  // The renamed command must not silently fall through to "unknown command":
-  // point old muscle memory (and old docs) at `bundle`.
-  it('tells plugin users the command is now bundle', () => {
+  // `plugin` is a distinct command group (native agent plugins) — bundle
+  // subcommands must not leak into it. `plugin list` is not a native plugin
+  // subcommand, so it errors with the native plugin help, not bundle output.
+  it('keeps plugin as a separate command group from bundle', () => {
     const result = runCli(['plugin', 'list'], undefined, STRIP);
-    expect(result.stderr + result.stdout).toContain("renamed to 'bundle'");
+    expect(result.stderr + result.stdout).toContain('Unknown plugin subcommand');
     expect(result.exitCode).toBe(1);
   });
 

@@ -114,6 +114,70 @@ two-tier strategy as `GET /api/search`. Used by `skills bundle search`.
 
 A registry that does not implement this endpoint should return `404`; the CLI treats that as "bundle search not available" and still supports installing a known bundle by name.
 
+### `GET /api/plugins/search`
+
+Search for **native agent plugins** — packages in an agent's own plugin format (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, …) bundling skills **plus** MCP servers, hooks, commands, and subagents. Catalog entries are pinned to a reviewed commit SHA. Used by `skills plugin search`.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Search query. If omitted or empty, returns all plugins. |
+
+**Response**
+
+```json
+{
+  "query": "incident",
+  "searchType": "semantic",
+  "plugins": [
+    {
+      "name": "incident-tools",
+      "description": "Incident response skills plus a live incident-db MCP server.",
+      "source": "playlist-tech/incident-forge",
+      "path": "",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "version": "1.2.0",
+      "components": { "skills": 3, "mcpServers": 1, "hooks": 2, "commands": 0, "agents": 0 },
+      "mcpServerNames": ["incident-db"],
+      "tags": ["incidents"],
+      "installs": 0
+    }
+  ],
+  "count": 1,
+  "duration_ms": 42
+}
+```
+
+`components` is the plugin's component inventory — the CLI renders it as badges so users see what a plugin wires up before installing. `sha` is the pinned commit every install step references (never a floating branch).
+
+A registry that does not implement this endpoint should return `404`; the CLI treats that as "native plugin search not available".
+
+### `GET /api/plugins/{name}/install?agent={agent}`
+
+Returns the per-agent install recipe for a plugin: the exact placement/registration steps plus the agent's trust step. The CLI **shows** these steps (disclosing the component inventory first); activation always ends at the agent's own trust gate.
+
+**Response**
+
+```json
+{
+  "name": "incident-tools",
+  "version": "1.2.0",
+  "source": { "org": "playlist-tech", "repo": "incident-forge", "path": "", "sha": "0123456…" },
+  "components": { "skills": 3, "mcpServers": 1, "hooks": 2, "commands": 0, "agents": 0 },
+  "mcpServerNames": ["incident-db"],
+  "agent": "claude",
+  "disclosure": "Wires 3 skills, 1 MCP server (incident-db), 2 hooks from playlist-tech/incident-forge@0123456",
+  "steps": [
+    { "kind": "clone", "description": "Clone the plugin source at the pinned commit", "command": "git clone … && git checkout …" },
+    { "kind": "place", "description": "Copy the plugin directory into Claude Code's skills dir", "dest": "~/.claude/skills/incident-tools/" }
+  ],
+  "trust": { "description": "Restart Claude Code and approve the workspace-trust prompt to activate the MCP server and hooks." }
+}
+```
+
+Errors: `404` — plugin not in the catalog; `400` — missing/unsupported `agent` (the body should include `availableAgents`).
+
 ### GET Skill Details
 
 Returns detail for a single skill. Two URL forms are supported:
