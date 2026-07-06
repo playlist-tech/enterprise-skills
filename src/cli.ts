@@ -26,6 +26,7 @@ import {
 import { runUpdate } from './update.ts';
 import { runUse, parseUseOptions } from './use.ts';
 import { runBundle } from './bundle.ts';
+import { runPlugin } from './native-plugin.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -149,6 +150,12 @@ ${BOLD}Bundles:${RESET}
   bundle remove <name> Remove an installed bundle's skills
   bundle search [query]
                        Search for bundles
+
+${BOLD}Native Plugins:${RESET}
+  plugin search [query]
+                       Search native agent plugins (skills + MCP + hooks)
+  plugin install <name> --agent <a>
+                       Show the exact install steps for an agent
 
 ${BOLD}Updates:${RESET}
   update [skills...]   Update skills to latest versions (alias: upgrade)
@@ -410,12 +417,13 @@ async function main(): Promise<void> {
       break;
     case 'plugin':
     case 'plugins':
-      // Renamed: `plugin` is reserved for future native-plugin support
-      // (skills + MCP + hooks); curated skill sets are now `bundle`.
-      console.error(
-        `The 'plugin' command was renamed to 'bundle'. Try: bundle ${restArgs.join(' ')}`.trimEnd()
-      );
-      process.exit(1);
+      // Native agent plugins (skills + MCP + hooks + commands) — distinct
+      // from `bundle`, which is curated skills only.
+      if (restArgs[0] === 'search' && !inAgent) {
+        showLogo();
+        console.log();
+      }
+      await runPlugin(restArgs);
       break;
     case 'check':
     case 'update':
