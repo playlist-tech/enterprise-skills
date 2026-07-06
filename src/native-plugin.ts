@@ -47,6 +47,7 @@ interface NativePluginHit {
   components?: PluginComponents;
   mcpServerNames?: string[];
   tags?: string[];
+  tier?: string;
 }
 
 interface RecipeStep {
@@ -63,6 +64,7 @@ interface InstallRecipe {
   components?: PluginComponents;
   mcpServerNames?: string[];
   agent: string;
+  tier?: string;
   disclosure?: string;
   steps: RecipeStep[];
   trust?: { description?: string };
@@ -111,11 +113,12 @@ async function searchPluginsAPI(query: string): Promise<NativePluginHit[]> {
 
 function renderPluginRow(plugin: NativePluginHit, selected: boolean): string {
   const name = selected ? pc.bold(plugin.name) : pc.cyan(plugin.name);
+  const tier = plugin.tier === 'community' ? pc.yellow(' (community)') : '';
   const badges = componentBadges(plugin.components);
   const badgeStr = badges ? ` ${pc.yellow(`[${badges}]`)}` : '';
   const source = plugin.source ? ` ${pc.dim(plugin.source)}` : '';
   const desc = plugin.description ? ` ${pc.dim(`— ${plugin.description}`)}` : '';
-  return `${name}${badgeStr}${source}${desc}`;
+  return `${name}${tier}${badgeStr}${source}${desc}`;
 }
 
 async function runPluginSearchPrompt(): Promise<NativePluginHit | null> {
@@ -129,7 +132,11 @@ async function runPluginSearchPrompt(): Promise<NativePluginHit | null> {
 }
 
 function printPluginHit(plugin: NativePluginHit): void {
-  console.log(pc.bold(plugin.name) + (plugin.version ? pc.dim(` v${plugin.version}`) : ''));
+  console.log(
+    pc.bold(plugin.name) +
+      (plugin.version ? pc.dim(` v${plugin.version}`) : '') +
+      (plugin.tier === 'community' ? pc.yellow(' (community)') : '')
+  );
   const badges = componentBadges(plugin.components);
   if (badges) console.log(`  ${pc.yellow(badges)}`);
   if (plugin.description) console.log(`  ${pc.dim(plugin.description)}`);
@@ -319,6 +326,17 @@ function printInstallPlan(recipe: InstallRecipe): void {
       (recipe.version ? pc.dim(` v${recipe.version}`) : '') +
       pc.dim(` — ${recipe.source.org}/${recipe.source.repo}@${shortSha} → ${recipe.agent}`)
   );
+
+  // Belt and suspenders: the server appends a community warning to the
+  // disclosure string, but re-flag it here so an untiered/older API response
+  // can't drop the caution for a community plugin.
+  if (recipe.tier === 'community') {
+    console.log(
+      pc.yellow(
+        'Community plugin — auto-discovered, not curated by Developer Experience. Review the source before running these steps.'
+      )
+    );
+  }
 
   // Security model: disclose the component inventory BEFORE any install step.
   if (recipe.disclosure) {
