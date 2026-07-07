@@ -389,4 +389,4 @@ async function main(): Promise<void> {
   }
 }
 
-main().finally(() => flushTelemetry().then(() => process.exit(0)));
+main().finally(() => flushTelemetry().then(() => process.exit(process.exitCode ?? 0)));

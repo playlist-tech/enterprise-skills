@@ -688,6 +688,7 @@ export async function runUpdate(args: string[] = []): Promise<void> {
   }
   if (totalFail > 0) {
     console.log(`${DIM}Failed to update ${totalFail} skill(s)${RESET}`);
+    process.exitCode = 1;
   }
 
   track({

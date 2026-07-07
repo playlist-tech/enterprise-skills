@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { spawnSync } from 'child_process';
-import { updateProjectSkills, updateGlobalSkills } from '../src/update.ts';
+import { updateProjectSkills, updateGlobalSkills, runUpdate } from '../src/update.ts';
 import * as git from '../src/git.ts';
 import * as skills from '../src/skills.ts';
 import * as blob from '../src/blob.ts';
@@ -8,6 +8,7 @@ import * as localLock from '../src/local-lock.ts';
 import * as skillLock from '../src/skill-lock.ts';
 import * as remove from '../src/remove.ts';
 import * as p from '@clack/prompts';
+import { spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -72,6 +73,8 @@ vi.mock('child_process', async (importOriginal) => {
 describe('Update Cleanup Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.exitCode = undefined;
+    process.env.DISABLE_TELEMETRY = '1';
     // Default mock for isTTY
     Object.defineProperty(process.stdin, 'isTTY', {
       value: true,
@@ -318,6 +321,43 @@ describe('Update Cleanup Unit Tests', () => {
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
       }
+    });
+  });
+
+  describe('runUpdate exit status', () => {
+    beforeEach(() => {
+      vi.mocked(localLock.readLocalLock).mockResolvedValue({
+        version: 1,
+        skills: {
+          'skill-a': {
+            source: 'owner/repo',
+            skillPath: 'skills/skill-a/SKILL.md',
+            sourceType: 'github',
+            computedHash: 'abc',
+          },
+        },
+      });
+
+      vi.mocked(git.cloneRepo).mockResolvedValue('/tmp/repo');
+      vi.mocked(skills.discoverSkills).mockResolvedValue([
+        { name: 'skill-a', path: '/tmp/repo/skills/skill-a', description: 'A', rawContent: '' },
+      ]);
+    });
+
+    it('sets a non-zero exit code when requested updates fail', async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 1 } as ReturnType<typeof spawnSync>);
+
+      await runUpdate(['--project', '--yes']);
+
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('does not set a failure exit code when requested updates succeed', async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>);
+
+      await runUpdate(['--project', '--yes']);
+
+      expect(process.exitCode).toBeUndefined();
     });
   });
 });
