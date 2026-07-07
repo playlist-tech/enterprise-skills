@@ -456,7 +456,12 @@ export async function updateGlobalSkills(
     const result = spawnSync(process.execPath, [cliEntry, 'add', installUrl, '-g', '-y'], {
       stdio: ['inherit', 'pipe', 'pipe'],
       encoding: 'utf-8',
-      shell: process.platform === 'win32',
+      // Never spawn through a shell. process.execPath is an absolute path to the
+      // node binary, so no shell is needed to resolve it. installUrl is derived
+      // from the lock file (and ref is URL-decoded, so influenceable by whoever
+      // publishes a skill); a shell on Windows would let metacharacters in that
+      // value inject commands. Passing argv directly keeps it inert.
+      shell: false,
     });
 
     if (result.status === 0) {
@@ -598,7 +603,11 @@ export async function updateProjectSkills(
         {
           stdio: ['inherit', 'pipe', 'pipe'],
           encoding: 'utf-8',
-          shell: process.platform === 'win32',
+          // Never spawn through a shell — same reasoning as updateGlobalSkills:
+          // execPath is absolute (no shell resolution needed) and installUrl/ref
+          // come from the lock file, so a shell would allow command injection on
+          // Windows. Pass argv directly instead.
+          shell: false,
         }
       );
 

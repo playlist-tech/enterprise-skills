@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { spawnSync } from 'child_process';
 import { updateProjectSkills, updateGlobalSkills } from '../src/update.ts';
 import * as git from '../src/git.ts';
 import * as skills from '../src/skills.ts';
@@ -267,6 +268,56 @@ describe('Update Cleanup Unit Tests', () => {
       expect(localLock.computeSkillFolderHash).toHaveBeenCalledWith(
         join('/tmp/repo', 'skills/skill-a')
       );
+    });
+
+    it('spawns the update without a shell so a crafted ref cannot inject commands', async () => {
+      // Force the Windows code path so this regression fails on the old
+      // `shell: process.platform === 'win32'` even when the test host is not
+      // Windows. The value is read inside spawnSync's options at call time.
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+      try {
+        vi.mocked(skillLock.readSkillLock).mockResolvedValue({
+          version: 3,
+          skills: {
+            'skill-a': {
+              source: 'owner/repo',
+              skillPath: 'skills/skill-a/SKILL.md',
+              sourceType: 'github',
+              skillFolderHash: 'old-hash',
+              // Attacker-influenceable ref carrying a shell metacharacter.
+              ref: 'main&calc',
+              installedAt: '',
+              updatedAt: '',
+            },
+          },
+        });
+
+        vi.mocked(blob.fetchRepoTree).mockResolvedValue({
+          sha: 'rootsha',
+          branch: 'main',
+          tree: [{ path: 'skills/skill-a/SKILL.md', type: 'blob', sha: 'sha1' }],
+        });
+        vi.mocked(blob.findSkillMdPaths).mockReturnValue(['skills/skill-a/SKILL.md']);
+        // Latest hash differs from the lock -> an update is queued -> spawnSync runs.
+        vi.mocked(blob.getSkillFolderHashFromTree).mockReturnValue('new-hash');
+
+        await updateGlobalSkills({ yes: true });
+
+        const installCall = vi
+          .mocked(spawnSync)
+          .mock.calls.find((call) => Array.isArray(call[1]) && call[1].includes('add'));
+        expect(installCall).toBeDefined();
+
+        const [, argv, options] = installCall!;
+        // The security invariant: no shell, so argv is passed to execvp verbatim.
+        expect((options as { shell?: boolean }).shell).toBe(false);
+        // The crafted ref rides inside a discrete argv element, never a command string.
+        expect(argv).toEqual(expect.arrayContaining([expect.stringContaining('main&calc')]));
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      }
     });
   });
 });
