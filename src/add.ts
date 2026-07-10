@@ -30,7 +30,23 @@ export function getLockSource(parsedUrl: string, normalizedSource: string | null
   // When normalizedSource is used, parseSource() later resolves it to HTTPS,
   // breaking restore for private repos that require SSH authentication.
   const isSSH = parsedUrl.startsWith('git@') || parsedUrl.startsWith('ssh://');
-  return isSSH ? parsedUrl : normalizedSource;
+  if (isSSH) {
+    return parsedUrl;
+  }
+  if (parsedUrl.startsWith('http://') || parsedUrl.startsWith('https://')) {
+    try {
+      if (new URL(parsedUrl).hostname !== 'github.com') {
+        return parsedUrl;
+      }
+    } catch {
+      return normalizedSource;
+    }
+  }
+  return normalizedSource;
+}
+
+export function getProjectLockSourceUrl(sourceType: string, sourceUrl: string): string | undefined {
+  return sourceType === 'git' || sourceType === 'gitlab' ? sourceUrl : undefined;
 }
 import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
 import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
@@ -530,6 +546,8 @@ export interface AddOptions {
   agent?: string[];
   yes?: boolean;
   skill?: string[];
+  /** Valid JSON to attach to the install telemetry event. */
+  metadata?: string;
   list?: boolean;
   all?: boolean;
   fullDepth?: boolean;
@@ -889,6 +907,7 @@ async function handleWellKnownSkills(
       agents: targetAgents.join(','),
       ...(installGlobally && { global: '1' }),
       skillFiles: JSON.stringify(skillFiles),
+      metadata: options.metadata,
       sourceType: 'well-known',
     });
   }
@@ -1771,6 +1790,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     const normalizedSource = getOwnerRepo(parsed);
 
     const lockSource = getLockSource(parsed.url, normalizedSource);
+    const projectLockSourceUrl = getProjectLockSourceUrl(parsed.type, parsed.url);
 
     // Only track if we have a valid remote source and it's not a private repo.
     // repoPrivacyPromise was started early (right after parsing) so it has
@@ -1789,6 +1809,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             agents: targetAgents.join(','),
             ...(installGlobally && { global: '1' }),
             skillFiles: JSON.stringify(skillFiles),
+            metadata: options.metadata,
           });
         }
       } else {
@@ -1800,6 +1821,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           agents: targetAgents.join(','),
           ...(installGlobally && { global: '1' }),
           skillFiles: JSON.stringify(skillFiles),
+          metadata: options.metadata,
         });
       }
     }
@@ -1877,6 +1899,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
               skill.name,
               {
                 source: lockSource || parsed.url,
+                ...(projectLockSourceUrl && { sourceUrl: projectLockSourceUrl }),
                 ref: parsed.ref,
                 sourceType: parsed.type,
                 ...(skillPathValue && { skillPath: skillPathValue }),
@@ -2104,9 +2127,14 @@ async function promptForFindSkills(
 }
 
 // Parse command line options from args array
-export function parseAddOptions(args: string[]): { source: string[]; options: AddOptions } {
+export function parseAddOptions(args: string[]): {
+  source: string[];
+  options: AddOptions;
+  errors: string[];
+} {
   const options: AddOptions = {};
   const source: string[] = [];
+  const errors: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -2139,6 +2167,18 @@ export function parseAddOptions(args: string[]): { source: string[]; options: Ad
         nextArg = args[i];
       }
       i--; // Back up one since the loop will increment
+    } else if (arg === '--metadata') {
+      const metadata = args[++i];
+      if (metadata === undefined) {
+        errors.push('--metadata requires a JSON value');
+      } else {
+        try {
+          JSON.parse(metadata);
+          options.metadata = metadata;
+        } catch {
+          errors.push('--metadata must be valid JSON');
+        }
+      }
     } else if (arg === '--full-depth') {
       options.fullDepth = true;
     } else if (arg === '--copy') {
@@ -2158,5 +2198,5 @@ export function parseAddOptions(args: string[]): { source: string[]; options: Ad
     }
   }
 
-  return { source, options };
+  return { source, options, errors };
 }

@@ -4,7 +4,12 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { runCli, stripAnsi } from './test-utils.ts';
 import { shouldInstallInternalSkills } from './skills.ts';
-import { parseAddOptions, getLockSource, formatEveInstallPromptMessage } from './add.ts';
+import {
+  parseAddOptions,
+  getLockSource,
+  getProjectLockSourceUrl,
+  formatEveInstallPromptMessage,
+} from './add.ts';
 
 const noDetectedAgentEnv = {
   AI_AGENT: '',
@@ -367,8 +372,38 @@ describe('getLockSource', () => {
     );
   });
 
-  it('keeps normalized owner/repo for non-SSH remotes', () => {
+  it('keeps normalized owner/repo for GitHub HTTPS remotes', () => {
     expect(getLockSource('https://github.com/owner/repo.git', 'owner/repo')).toBe('owner/repo');
+  });
+
+  it('preserves self-hosted HTTPS Git URLs for lock files', () => {
+    expect(getLockSource('https://gitlab.example.com/acme/skills.git', 'acme/skills')).toBe(
+      'https://gitlab.example.com/acme/skills.git'
+    );
+  });
+
+  it('preserves gitlab.com HTTPS URLs for lock files', () => {
+    expect(getLockSource('https://gitlab.com/acme/skills.git', 'acme/skills')).toBe(
+      'https://gitlab.com/acme/skills.git'
+    );
+  });
+});
+
+describe('getProjectLockSourceUrl', () => {
+  it('records sourceUrl for self-hosted GitLab HTTPS sources installed into project locks', () => {
+    expect(getProjectLockSourceUrl('git', 'https://gitlab.example.com/acme/skills.git')).toBe(
+      'https://gitlab.example.com/acme/skills.git'
+    );
+  });
+
+  it('records sourceUrl for GitLab sources installed into project locks', () => {
+    expect(getProjectLockSourceUrl('gitlab', 'https://gitlab.com/acme/skills.git')).toBe(
+      'https://gitlab.com/acme/skills.git'
+    );
+  });
+
+  it('keeps GitHub project locks compatible with existing shorthand entries', () => {
+    expect(getProjectLockSourceUrl('github', 'https://github.com/owner/repo.git')).toBeUndefined();
   });
 });
 
@@ -476,6 +511,28 @@ describe('parseAddOptions', () => {
     expect(result.options.fullDepth).toBe(true);
     expect(result.options.list).toBe(true);
     expect(result.options.global).toBe(true);
+  });
+
+  it('should parse valid JSON metadata', () => {
+    const metadata = '{"origin":"workflow","runId":42}';
+    const result = parseAddOptions(['source', '--metadata', metadata]);
+
+    expect(result.source).toEqual(['source']);
+    expect(result.options.metadata).toBe(metadata);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('should reject invalid JSON metadata', () => {
+    const result = parseAddOptions(['source', '--metadata', '{not-json}']);
+
+    expect(result.options.metadata).toBeUndefined();
+    expect(result.errors).toEqual(['--metadata must be valid JSON']);
+  });
+
+  it('should reject a missing metadata value', () => {
+    const result = parseAddOptions(['source', '--metadata']);
+
+    expect(result.errors).toEqual(['--metadata requires a JSON value']);
   });
 
   it('should parse a single --subagent value', () => {

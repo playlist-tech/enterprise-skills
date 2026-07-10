@@ -45,6 +45,13 @@ export function getOpenClawGlobalSkillsDir(
   return join(homeDir, '.openclaw/skills');
 }
 
+export function isZCodeInstalled(
+  homeDir = home,
+  pathExists: (path: string) => boolean = existsSync
+) {
+  return pathExists(join(homeDir, '.zcode')) || pathExists('/Applications/ZCode.app');
+}
+
 export const agents: Record<AgentType, AgentConfig> = {
   'aider-desk': {
     name: 'aider-desk',
@@ -645,6 +652,15 @@ export const agents: Record<AgentType, AgentConfig> = {
         (!!zedAppDataHome && existsSync(join(zedAppDataHome, 'Zed'))) ||
         (!!zedFlatpakConfigHome && existsSync(join(zedFlatpakConfigHome, 'zed')))
       );
+    },
+  },
+  zcode: {
+    name: 'zcode',
+    displayName: 'ZCode',
+    skillsDir: '.zcode/skills',
+    globalSkillsDir: join(home, '.zcode/skills'),
+    detectInstalled: async () => {
+      return isZCodeInstalled();
     },
   },
   zencoder: {

@@ -101,6 +101,7 @@
     "warp",
     "windsurf",
     "zed",
+    "zcode",
     "zencoder",
     "zenflow",
     "neovate",
@@ -120,7 +121,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@clack/prompts": "^0.11.0",
+    "@clack/prompts": "^1.2.0",
     "@types/bun": "latest",
     "@types/node": "^22.10.0",
     "@vercel/detect-agent": "^1.2.1",
