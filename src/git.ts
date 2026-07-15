@@ -153,6 +153,7 @@ function createGitClient(sshCommand?: string) {
       allowUnsafeTemplateDir: true,
     },
   });
+
   git.env({
     ...process.env,
     GIT_TERMINAL_PROMPT: '0',
