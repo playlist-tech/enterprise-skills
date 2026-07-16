@@ -6,6 +6,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const DEFAULT_CLONE_TIMEOUT_MS = 300_000; // 5 minutes
+const ALLOWED_GIT_PROTOCOLS = 'https:http:ssh:git:file';
 const CLONE_TIMEOUT_MS = (() => {
   const raw = process.env.SKILLS_CLONE_TIMEOUT_MS;
   if (!raw) return DEFAULT_CLONE_TIMEOUT_MS;
@@ -156,6 +157,7 @@ function createGitClient(sshCommand?: string) {
   git.env({
     ...process.env,
     GIT_TERMINAL_PROMPT: '0',
+    GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
     // When git-lfs IS installed, tell it not to download LFS content
     // during checkout. See #952 for context and empirical impact.
     GIT_LFS_SKIP_SMUDGE: '1',
@@ -189,7 +191,11 @@ async function tryGhClone(repo: GitHubRepoInfo, tempDir: string, ref?: string): 
   const gitFlags = ref ? ['--depth=1', '--branch', ref] : ['--depth=1'];
   await execFileAsync('gh', ['repo', 'clone', cloneTarget, tempDir, '--', ...gitFlags], {
     timeout: CLONE_TIMEOUT_MS,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    env: {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
+    },
   });
   return true;
 }
