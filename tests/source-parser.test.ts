@@ -429,6 +429,12 @@ describe('Source aliases', () => {
     expect(result.type).toBe('github');
     expect(result.url).toBe('https://github.com/coinbase/agentic-wallet-skills.git');
   });
+
+  it('resolves vercel-labs/vercel-skills to vercel-labs/agent-skills', () => {
+    const result = parseSource('vercel-labs/vercel-skills');
+    expect(result.type).toBe('github');
+    expect(result.url).toBe('https://github.com/vercel-labs/agent-skills.git');
+  });
 });
 
 describe('Prefix shorthand tests', () => {

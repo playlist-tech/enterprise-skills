@@ -315,19 +315,7 @@ export async function searchMultiselect<T>(
       return items.filter((item) => filter(item, query));
     };
 
-    const clearRender = (): void => {
-      if (!vtSupported || lastRenderHeight === 0) return;
-      // Move up and clear each line
-      process.stdout.write(`\x1b[${lastRenderHeight}A`);
-      for (let i = 0; i < lastRenderHeight; i++) {
-        process.stdout.write('\x1b[2K\x1b[1B');
-      }
-      process.stdout.write(`\x1b[${lastRenderHeight}A`);
-    };
-
     const render = (state: 'active' | 'submit' | 'cancel' = 'active'): void => {
-      clearRender();
-
       const lines: string[] = [];
       const filtered = getFiltered();
       const entries = buildSearchEntries(filtered, selectGroups, collapsedGroups);
@@ -471,10 +459,13 @@ export async function searchMultiselect<T>(
         lines.push(`${S_BAR}  ${pc.strikethrough(pc.dim('Cancelled'))}`);
       }
 
-      process.stdout.write(lines.join('\n') + '\n');
+      // Write the clear sequence and next frame together. Clearing individual rows first
+      // makes larger prompts visibly flash between redraws in some terminals.
+      const clearPreviousFrame = lastRenderHeight > 0 ? `\x1b[${lastRenderHeight}A\x1b[J` : '';
+      process.stdout.write(clearPreviousFrame + lines.join('\n') + '\n');
       // Use wrapped row count: logical lines can span multiple terminal rows when hints
-      // or labels exceed column width. Using lines.length alone under-counts and breaks
-      // clearRender(), causing the prompt to re-print hundreds of times on each redraw.
+      // or labels exceed column width. Using lines.length alone under-counts and fails to
+      // clear the full previous frame, causing the prompt to re-print stale rows on redraw.
       lastRenderHeight = countVisualRowsForLines(lines, process.stdout.columns);
     };
 
