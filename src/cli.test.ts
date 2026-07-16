@@ -47,26 +47,7 @@ describe('skills CLI', () => {
 
   describe('no arguments', () => {
     it('should display banner', () => {
-      const result = runCli([], undefined, {
-        AI_AGENT: '',
-        ANTIGRAVITY_AGENT: '',
-        AUGMENT_AGENT: '',
-        CLAUDE_CODE: '',
-        CLAUDE_CODE_IS_COWORK: '',
-        CLAUDECODE: '',
-        CODEX_CI: '',
-        CODEX_SANDBOX: '',
-        CODEX_THREAD_ID: '',
-        COPILOT_ALLOW_ALL: '',
-        COPILOT_GITHUB_TOKEN: '',
-        COPILOT_MODEL: '',
-        CURSOR_AGENT: '',
-        CURSOR_EXTENSION_HOST_ROLE: '',
-        CURSOR_TRACE_ID: '',
-        GEMINI_CLI: '',
-        OPENCODE_CLIENT: '',
-        REPL_ID: '',
-      });
+      const result = runCli([]);
       const output = stripLogo(result.stdout);
       expect(output).toContain('The open agent skills ecosystem');
       expect(output).toContain('npx skills add');

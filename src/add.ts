@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync } from 'fs';
@@ -198,13 +197,6 @@ function shortenPath(fullPath: string, cwd: string): string {
     return '.' + fullPath.slice(cwd.length);
   }
   return fullPath;
-}
-
-function computeSingleFileSkillHash(contents: string): string {
-  const hash = createHash('sha256');
-  hash.update('SKILL.md');
-  hash.update(contents);
-  return hash.digest('hex');
 }
 
 /**
@@ -1306,47 +1298,33 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       // Check if any skills have plugin grouping
       const hasGroups = sortedSkills.some((s) => s.pluginName);
 
-      let selected: Skill[] | symbol;
+      const kebabToTitle = (s: string) =>
+        s
+          .split('-')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
 
-      if (hasGroups) {
-        // Build grouped options for groupMultiselect
-        const kebabToTitle = (s: string) =>
-          s
-            .split('-')
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' ');
+      const skillChoices = sortedSkills.map((s) => ({
+        value: s,
+        label: getSkillDisplayName(s),
+        group: hasGroups ? (s.pluginName ? kebabToTitle(s.pluginName) : 'Other') : undefined,
+        detail: s.description,
+      }));
 
-        const grouped: Record<string, p.Option<Skill>[]> = {};
-        for (const s of sortedSkills) {
-          const groupName = s.pluginName ? kebabToTitle(s.pluginName) : 'Other';
-          if (!grouped[groupName]) grouped[groupName] = [];
-          grouped[groupName]!.push({
-            value: s,
-            label: getSkillDisplayName(s),
-            hint: s.description.length > 60 ? s.description.slice(0, 57) + '…' : s.description,
-          });
-        }
+      const selected = await searchMultiselect({
+        message: hasGroups
+          ? `Select skills to install ${pc.dim('(space to toggle)')}`
+          : 'Select skills to install',
+        items: skillChoices,
+        required: true,
+        maxVisible: 20,
+        searchable: !hasGroups,
+        showDetail: true,
+        showSelectedSummary: false,
+        selectGroups: hasGroups,
+      });
 
-        selected = await p.groupMultiselect({
-          message: `Select skills to install ${pc.dim('(space to toggle)')}`,
-          options: grouped,
-          required: true,
-        });
-      } else {
-        const skillChoices = sortedSkills.map((s) => ({
-          value: s,
-          label: getSkillDisplayName(s),
-          hint: s.description.length > 60 ? s.description.slice(0, 57) + '…' : s.description,
-        }));
-
-        selected = await multiselect({
-          message: 'Select skills to install',
-          options: skillChoices,
-          required: true,
-        });
-      }
-
-      if (p.isCancel(selected)) {
+      if (isCancelled(selected)) {
         p.cancel('Installation cancelled');
         await cleanup(tempDir);
         process.exit(0);
@@ -1736,15 +1714,12 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             agent,
             { global: installGlobally, mode: installMode, eveSubagent: subagent }
           );
-        } else if (tempDir && skill.path === tempDir && skill.rawContent) {
-          // Remote root-level SKILL.md: install the skill file, not the whole repository.
-          result = await installBlobSkillForAgent(
-            { installName: skill.name, files: [{ path: 'SKILL.md', contents: skill.rawContent }] },
-            agent,
-            { global: installGlobally, mode: installMode }
-          );
         } else {
-          // Disk-based install: copy from cloned/local directory
+          // Disk-based install: copy from cloned/local directory.
+          // Root-level skills (SKILL.md at repo root, so skill.path === tempDir)
+          // also take this path and are copied recursively (see installer.ts
+          // copyDirectory, which excludes .git), so their scripts/, references/,
+          // assets/, etc. are installed too. See issue #1603.
           result = await installSkillForAgent(skill, agent, {
             global: installGlobally,
             mode: installMode,
@@ -1894,9 +1869,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             const computedHash =
               blobResult && 'snapshotHash' in skill
                 ? (skill as BlobSkill).snapshotHash
-                : tempDir && skill.path === tempDir && skill.rawContent
-                  ? computeSingleFileSkillHash(skill.rawContent)
-                  : await computeSkillFolderHash(skill.path);
+                : await computeSkillFolderHash(skill.path);
             const skillPathValue = skillFiles[skill.name];
             await addSkillToLocalLock(
               skill.name,

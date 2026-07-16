@@ -25,9 +25,12 @@ import {
 } from './git.ts';
 
 function createGitClientMock(clone: ReturnType<typeof vi.fn>) {
-  return {
+  const client = {
     clone,
+    env: vi.fn(),
   };
+  client.env.mockReturnValue(client);
+  return client;
 }
 
 function mockExecFileSuccess(stdout = '', stderr = '') {
@@ -56,6 +59,7 @@ describe('git clone fallbacks', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     for (const dir of createdDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -92,8 +96,12 @@ describe('git clone fallbacks', () => {
   });
 
   it('allows the hard-coded LFS filter overrides required for clone', async () => {
+    vi.stubEnv('EDITOR', 'skills-test-editor');
+    vi.stubEnv('GIT_ASKPASS', 'skills-test-askpass');
+    vi.stubEnv('PAGER', 'skills-test-pager');
     const clone = vi.fn().mockResolvedValue(undefined);
-    simpleGitMock.mockReturnValueOnce(createGitClientMock(clone));
+    const client = createGitClientMock(clone);
+    simpleGitMock.mockReturnValueOnce(client);
 
     const tempDir = await cloneRepo('https://github.com/Giphy/giphy-codex-skills.git');
     createdDirs.push(tempDir);
@@ -106,7 +114,37 @@ describe('git clone fallbacks', () => {
           'filter.lfs.clean=',
           'filter.lfs.process=',
         ],
-        unsafe: { allowUnsafeFilter: true },
+        unsafe: {
+          allowUnsafeAlias: true,
+          allowUnsafeAskPass: true,
+          allowUnsafeConfigEnvCount: true,
+          allowUnsafeConfigPaths: true,
+          allowUnsafeCredentialHelper: true,
+          allowUnsafeDiffExternal: true,
+          allowUnsafeDiffTextConv: true,
+          allowUnsafeEditor: true,
+          allowUnsafeFilter: true,
+          allowUnsafeFsMonitor: true,
+          allowUnsafeGpgProgram: true,
+          allowUnsafeGitProxy: true,
+          allowUnsafeHooksPath: true,
+          allowUnsafeMergeDriver: true,
+          allowUnsafePack: true,
+          allowUnsafePager: true,
+          allowUnsafeProtocolOverride: true,
+          allowUnsafeSshCommand: true,
+          allowUnsafeTemplateDir: true,
+        },
+      })
+    );
+    expect(simpleGitMock.mock.calls[0]![0]).not.toHaveProperty('env');
+    expect(client.env).toHaveBeenCalledWith(
+      expect.objectContaining({
+        EDITOR: 'skills-test-editor',
+        GIT_ASKPASS: 'skills-test-askpass',
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_LFS_SKIP_SMUDGE: '1',
+        PAGER: 'skills-test-pager',
       })
     );
   });
@@ -147,10 +185,10 @@ describe('git clone fallbacks', () => {
   it('falls back to SSH when gh clone is unavailable or fails', async () => {
     const primaryClone = vi.fn().mockRejectedValue(new Error('fatal: Authentication failed'));
     const sshClone = vi.fn().mockResolvedValue(undefined);
+    const primaryClient = createGitClientMock(primaryClone);
+    const sshClient = createGitClientMock(sshClone);
 
-    simpleGitMock
-      .mockReturnValueOnce(createGitClientMock(primaryClone))
-      .mockReturnValueOnce(createGitClientMock(sshClone));
+    simpleGitMock.mockReturnValueOnce(primaryClient).mockReturnValueOnce(sshClient);
     mockExecFileSuccess('Git operations protocol: ssh\n');
     mockExecFileError('gh repo clone failed');
 
@@ -161,6 +199,11 @@ describe('git clone fallbacks', () => {
       '--depth',
       '1',
     ]);
+    expect(sshClient.env).toHaveBeenCalledWith(
+      expect.objectContaining({
+        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
+      })
+    );
   });
 
   it('surfaces a targeted SAML SSO message when all fallbacks fail', async () => {

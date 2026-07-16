@@ -98,17 +98,9 @@ function isAuthFailure(message: string): boolean {
   );
 }
 
-function createGitClient(extraEnv?: NodeJS.ProcessEnv) {
-  return simpleGit({
+function createGitClient(sshCommand?: string) {
+  const git = simpleGit({
     timeout: { block: CLONE_TIMEOUT_MS },
-    env: {
-      ...process.env,
-      GIT_TERMINAL_PROMPT: '0',
-      // When git-lfs IS installed, tell it not to download LFS content
-      // during checkout. See #952 for context and empirical impact.
-      GIT_LFS_SKIP_SMUDGE: '1',
-      ...extraEnv,
-    },
     // When git-lfs is NOT installed, GIT_LFS_SKIP_SMUDGE has no effect —
     // git sees `filter=lfs` in .gitattributes, tries to run
     // `git-lfs filter-process`, and aborts the checkout with:
@@ -131,10 +123,46 @@ function createGitClient(extraEnv?: NodeJS.ProcessEnv) {
     // simple-git v3.36+ rejects all `filter.*` configuration by default.
     // These values are hard-coded above and only disable the LFS filter for
     // this clone; no caller-controlled filter command is ever allowed.
+    //
+    // Calling `.env()` below replaces simple-git's normally inherited process
+    // environment. Preserve that existing Git behavior for credentials,
+    // configuration, SSH, proxies, editors, pagers, and related tooling. These
+    // allowances apply only to trusted environment variables already controlled
+    // by the caller (plus the hard-coded SSH fallback). This client is used only
+    // for clone with fixed options; the clone URL and ref cannot configure them.
     unsafe: {
+      allowUnsafeAlias: true,
+      allowUnsafeAskPass: true,
+      allowUnsafeConfigEnvCount: true,
+      allowUnsafeConfigPaths: true,
+      allowUnsafeCredentialHelper: true,
+      allowUnsafeDiffExternal: true,
+      allowUnsafeDiffTextConv: true,
+      allowUnsafeEditor: true,
       allowUnsafeFilter: true,
+      allowUnsafeFsMonitor: true,
+      allowUnsafeGpgProgram: true,
+      allowUnsafeGitProxy: true,
+      allowUnsafeHooksPath: true,
+      allowUnsafeMergeDriver: true,
+      allowUnsafePack: true,
+      allowUnsafePager: true,
+      allowUnsafeProtocolOverride: true,
+      allowUnsafeSshCommand: true,
+      allowUnsafeTemplateDir: true,
     },
   });
+
+  git.env({
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    // When git-lfs IS installed, tell it not to download LFS content
+    // during checkout. See #952 for context and empirical impact.
+    GIT_LFS_SKIP_SMUDGE: '1',
+    ...(sshCommand ? { GIT_SSH_COMMAND: sshCommand } : {}),
+  });
+
+  return git;
 }
 
 async function resetTempDir(dir: string): Promise<void> {
@@ -239,9 +267,11 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
 
       try {
         await resetTempDir(tempDir);
-        await createGitClient({
-          GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
-        }).clone(repo.sshUrl, tempDir, cloneOptions);
+        await createGitClient(process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes').clone(
+          repo.sshUrl,
+          tempDir,
+          cloneOptions
+        );
         return tempDir;
       } catch {
         // Fall through to the targeted auth error below.

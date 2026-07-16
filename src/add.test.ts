@@ -17,27 +17,6 @@ function countPathLinesForSkill(text: string, skillName: string): number {
   ).length;
 }
 
-const noDetectedAgentEnv = {
-  AI_AGENT: '',
-  ANTIGRAVITY_AGENT: '',
-  AUGMENT_AGENT: '',
-  CLAUDE_CODE: '',
-  CLAUDE_CODE_IS_COWORK: '',
-  CLAUDECODE: '',
-  CODEX_CI: '',
-  CODEX_SANDBOX: '',
-  CODEX_THREAD_ID: '',
-  COPILOT_ALLOW_ALL: '',
-  COPILOT_GITHUB_TOKEN: '',
-  COPILOT_MODEL: '',
-  CURSOR_AGENT: '',
-  CURSOR_EXTENSION_HOST_ROLE: '',
-  CURSOR_TRACE_ID: '',
-  GEMINI_CLI: '',
-  OPENCODE_CLIENT: '',
-  REPL_ID: '',
-};
-
 describe('add command', () => {
   let testDir: string;
 
@@ -142,8 +121,7 @@ description: Shared install path regression test
 
     const result = runCli(
       ['add', sourceDir, '-y', '--agent', 'codex', 'cursor', 'cline'],
-      projectDir,
-      noDetectedAgentEnv
+      projectDir
     );
 
     expect(result.exitCode).toBe(0);
@@ -172,8 +150,7 @@ description: Mixed copied destination regression test
 
     const result = runCli(
       ['add', sourceDir, '-y', '--copy', '--agent', 'codex', 'cursor', 'openclaw'],
-      projectDir,
-      noDetectedAgentEnv
+      projectDir
     );
 
     expect(result.exitCode).toBe(0);
@@ -205,11 +182,7 @@ Instructions here.
       JSON.stringify({ dependencies: { eve: '^0.11.5' } })
     );
 
-    const result = runCli(
-      ['add', sourceDir, '-y', '--skill', 'eve-skill'],
-      projectDir,
-      noDetectedAgentEnv
-    );
+    const result = runCli(['add', sourceDir, '-y', '--skill', 'eve-skill'], projectDir);
 
     expect(result.stdout).toContain('Installing to: eve agent');
     expect(result.stdout).not.toContain('Installing to: Eve');
