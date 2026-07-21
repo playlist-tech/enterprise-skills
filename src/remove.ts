@@ -5,7 +5,8 @@ import { join } from 'path';
 import { agents, detectInstalledAgents, getEveSubagents } from './agents.ts';
 import { track } from './telemetry.ts';
 import { detectAgent } from './detect-agent.ts';
-import { removeSkillFromLock, getSkillFromLock } from './skill-lock.ts';
+import { removeSkillFromLock, getSkillFromLock, readSkillLock } from './skill-lock.ts';
+import { readLocalLock, removeSkillFromLocalLock } from './local-lock.ts';
 import type { AgentType } from './types.ts';
 import {
   getInstallPath,
@@ -78,7 +79,26 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
   const installedSkills = Array.from(skillNamesSet).sort();
   spinner.stop(`Found ${installedSkills.length} unique installed skill(s)`);
 
-  if (installedSkills.length === 0) {
+  // Read lock file keys up front. These are needed both to decide whether there is
+  // anything to remove (a skill may be missing from disk but still leave a stale lock
+  // entry) and to clean up those stale entries below.
+  const lockSkillsKeys = isGlobal
+    ? Object.keys((await readSkillLock()).skills)
+    : Object.keys((await readLocalLock(cwd)).skills);
+
+  // Requested skills that are gone from disk but still have a stale lock entry.
+  // These must be cleaned up even when no skills remain installed on disk, otherwise
+  // the entry lingers forever (e.g. a skill deleted upstream during `skills update`).
+  const staleLockSkills =
+    !options.all && skillNames.length > 0
+      ? skillNames.filter(
+          (name) =>
+            !installedSkills.some((s) => s.toLowerCase() === name.toLowerCase()) &&
+            lockSkillsKeys.some((k) => k.toLowerCase() === name.toLowerCase())
+        )
+      : [];
+
+  if (installedSkills.length === 0 && staleLockSkills.length === 0) {
     p.outro(pc.yellow('No skills found to remove.'));
     return;
   }
@@ -103,6 +123,14 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
     selectedSkills = installedSkills.filter((s) =>
       skillNames.some((name) => name.toLowerCase() === s.toLowerCase())
     );
+
+    // Requested skills missing from disk but still present in the lock file (computed
+    // above) are mapped back to their exact lock key so the stale entry can be cleaned up.
+    const mappedMissingSkills = staleLockSkills.map(
+      (name) => lockSkillsKeys.find((k) => k.toLowerCase() === name.toLowerCase()) || name
+    );
+
+    selectedSkills.push(...mappedMissingSkills);
 
     if (selectedSkills.length === 0) {
       p.log.error(`No matching skills found for: ${skillNames.join(', ')}`);
@@ -231,12 +259,20 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
         await rm(canonicalPath, { recursive: true, force: true });
       }
 
-      const lockEntry = isGlobal ? await getSkillFromLock(skillName) : null;
-      const effectiveSource = lockEntry?.source || 'local';
-      const effectiveSourceType = lockEntry?.sourceType || 'local';
+      let effectiveSource = 'local';
+      let effectiveSourceType = 'local';
 
       if (isGlobal) {
+        const lockEntry = await getSkillFromLock(skillName);
+        effectiveSource = lockEntry?.source || 'local';
+        effectiveSourceType = lockEntry?.sourceType || 'local';
         await removeSkillFromLock(skillName);
+      } else {
+        const localLock = await readLocalLock(cwd);
+        const lockEntry = localLock.skills[skillName];
+        effectiveSource = lockEntry?.source || 'local';
+        effectiveSourceType = lockEntry?.sourceType || 'local';
+        await removeSkillFromLocalLock(skillName, cwd);
       }
 
       results.push({

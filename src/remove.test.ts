@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, rmSync, mkdirSync, writeFileSync, readdirSync } from 'fs';
+import { existsSync, rmSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { runCli, runCliWithInput } from './test-utils.js';
@@ -77,6 +77,30 @@ This is a test skill.
       expect(result.stdout).toContain('No skills found');
       expect(result.exitCode).toBe(0);
     });
+
+    it('should clean stale lock entry even when no skills are installed on disk', () => {
+      const lockPath = join(testDir, 'skills-lock.json');
+      const lockContent = {
+        version: 1,
+        skills: {
+          'stale-skill': {
+            source: 'some-source',
+            sourceType: 'github',
+            computedHash: 'somehash',
+          },
+        },
+      };
+      writeFileSync(lockPath, JSON.stringify(lockContent, null, 2));
+
+      // No skills exist on disk, but stale-skill lingers in the lock file
+      const result = runCli(['remove', 'stale-skill', '-y'], testDir);
+
+      expect(result.stdout).toContain('Successfully removed');
+      expect(result.exitCode).toBe(0);
+
+      const updatedLock = JSON.parse(readFileSync(lockPath, 'utf-8'));
+      expect(updatedLock.skills['stale-skill']).toBeUndefined();
+    });
   });
 
   describe('with skills installed', () => {
@@ -137,6 +161,32 @@ This is a test skill.
 
       expect(result.stdout).toContain('No matching skills');
       expect(result.exitCode).toBe(0);
+    });
+
+    it('should remove skill that is missing from disk but exists in local lock file', () => {
+      const lockPath = join(testDir, 'skills-lock.json');
+      const lockContent = {
+        version: 1,
+        skills: {
+          'stale-skill': {
+            source: 'some-source',
+            sourceType: 'github',
+            computedHash: 'somehash',
+          },
+        },
+      };
+      writeFileSync(lockPath, JSON.stringify(lockContent, null, 2));
+
+      // stale-skill is missing from disk, but exists in lock file
+      const result = runCli(['remove', 'stale-skill', '-y'], testDir);
+
+      expect(result.stdout).toContain('Successfully removed');
+      expect(result.stdout).toContain('1 skill');
+      expect(result.exitCode).toBe(0);
+
+      // Verify lock file has been updated to remove the skill
+      const updatedLock = JSON.parse(readFileSync(lockPath, 'utf-8'));
+      expect(updatedLock.skills['stale-skill']).toBeUndefined();
     });
 
     it('should be case-insensitive when matching skill names', () => {
