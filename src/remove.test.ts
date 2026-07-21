@@ -101,6 +101,35 @@ This is a test skill.
       const updatedLock = JSON.parse(readFileSync(lockPath, 'utf-8'));
       expect(updatedLock.skills['stale-skill']).toBeUndefined();
     });
+
+    it('should clean all stale lock entries with --all', () => {
+      const lockPath = join(testDir, 'skills-lock.json');
+      writeFileSync(
+        lockPath,
+        JSON.stringify(
+          {
+            version: 1,
+            skills: {
+              'stale-skill': {
+                source: 'some-source',
+                sourceType: 'github',
+                computedHash: 'somehash',
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+
+      const result = runCli(['remove', '--all', '-y'], testDir);
+
+      expect(result.stdout).toContain('Successfully removed');
+      expect(result.exitCode).toBe(0);
+
+      const updatedLock = JSON.parse(readFileSync(lockPath, 'utf-8'));
+      expect(updatedLock.skills['stale-skill']).toBeUndefined();
+    });
   });
 
   describe('with skills installed', () => {
@@ -189,6 +218,36 @@ This is a test skill.
       expect(updatedLock.skills['stale-skill']).toBeUndefined();
     });
 
+    it('should remove a sanitized folder using its exact local lock key', () => {
+      createTestSkill('ce-review');
+      const lockPath = join(testDir, 'skills-lock.json');
+      writeFileSync(
+        lockPath,
+        JSON.stringify(
+          {
+            version: 1,
+            skills: {
+              'ce:review': {
+                source: 'everyinc/compound-engineering-plugin',
+                sourceType: 'github',
+                computedHash: 'somehash',
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+
+      const result = runCli(['remove', 'ce:review', '-y'], testDir);
+
+      expect(result.stdout).toContain('Successfully removed');
+      expect(existsSync(join(skillsDir, 'ce-review'))).toBe(false);
+
+      const updatedLock = JSON.parse(readFileSync(lockPath, 'utf-8'));
+      expect(updatedLock.skills['ce:review']).toBeUndefined();
+    });
+
     it('should be case-insensitive when matching skill names', () => {
       const result = runCli(['remove', 'SKILL-ONE', '-y'], testDir);
 
@@ -270,6 +329,48 @@ This is a test skill.
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Successfully removed');
       expect(existsSync(globalSkillDir)).toBe(false);
+    });
+
+    it('should remove a sanitized folder and its exact global lock key', () => {
+      const testHome = join(testDir, 'home');
+      const globalSkillDir = createTestSkill(
+        'ce-review',
+        'A plugin skill',
+        join(testHome, '.agents', 'skills')
+      );
+      const lockPath = join(testHome, '.local', 'state', 'skills', '.skill-lock.json');
+      mkdirSync(join(testHome, '.local', 'state', 'skills'), { recursive: true });
+      writeFileSync(
+        lockPath,
+        JSON.stringify(
+          {
+            version: 3,
+            skills: {
+              'ce:review': {
+                source: 'everyinc/compound-engineering-plugin',
+                sourceType: 'github',
+                sourceUrl: 'https://github.com/everyinc/compound-engineering-plugin',
+                skillFolderHash: 'somehash',
+                installedAt: '2026-07-01T00:00:00.000Z',
+                updatedAt: '2026-07-01T00:00:00.000Z',
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+
+      const result = runCli(['remove', 'ce-review', '--global', '-y'], testDir, {
+        HOME: testHome,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Successfully removed');
+      expect(existsSync(globalSkillDir)).toBe(false);
+
+      const updatedLock = JSON.parse(readFileSync(lockPath, 'utf-8'));
+      expect(updatedLock.skills['ce:review']).toBeUndefined();
     });
   });
 

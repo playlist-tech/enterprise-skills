@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'fs/promises';
 import { join, basename, dirname, resolve, normalize, sep, relative } from 'path';
 import { parseFrontmatter } from './frontmatter.ts';
-import { sanitizeMetadata } from './sanitize.ts';
+import { sanitizeMetadata, stripTerminalEscapes } from './sanitize.ts';
 import type { Skill } from './types.ts';
 import { getPluginSkillPaths, getPluginGroupings } from './plugin-manifest.ts';
 import { readLocalLock } from './local-lock.ts';
@@ -68,42 +68,63 @@ async function hasSkillMd(dir: string): Promise<boolean> {
   }
 }
 
+function warnSkippedSkill(skillMdPath: string, reason: string): void {
+  console.warn(`⚠ Skipped ${sanitizeMetadata(skillMdPath)} — ${stripTerminalEscapes(reason)}`);
+}
+
 export async function parseSkillMd(
   skillMdPath: string,
   options?: { includeInternal?: boolean }
 ): Promise<Skill | null> {
+  let content: string;
   try {
-    const content = await readFile(skillMdPath, 'utf-8');
-    const { data } = parseFrontmatter(content);
-
-    if (!data.name || !data.description) {
-      return null;
-    }
-
-    // Ensure name and description are strings (YAML can parse numbers, booleans, etc.)
-    if (typeof data.name !== 'string' || typeof data.description !== 'string') {
-      return null;
-    }
-
-    // Skip internal skills unless:
-    // 1. INSTALL_INTERNAL_SKILLS=1 is set, OR
-    // 2. includeInternal option is true (e.g., when user explicitly requests a skill)
-    const metadata = isRecord(data.metadata) ? data.metadata : undefined;
-    const isInternal = metadata?.internal === true;
-    if (isInternal && !shouldInstallInternalSkills() && !options?.includeInternal) {
-      return null;
-    }
-
-    return {
-      name: sanitizeMetadata(data.name),
-      description: sanitizeMetadata(data.description),
-      path: dirname(skillMdPath),
-      rawContent: content,
-      metadata,
-    };
-  } catch {
+    content = await readFile(skillMdPath, 'utf-8');
+  } catch (err) {
+    warnSkippedSkill(skillMdPath, `failed to read file: ${(err as Error).message}`);
     return null;
   }
+
+  let data: Record<string, unknown>;
+  try {
+    ({ data } = parseFrontmatter(content));
+  } catch (err) {
+    warnSkippedSkill(skillMdPath, `YAML parse error: ${(err as Error).message}`);
+    return null;
+  }
+
+  if (!data.name || !data.description) {
+    const missing: string[] = [];
+    if (!data.name) missing.push('name');
+    if (!data.description) missing.push('description');
+    warnSkippedSkill(skillMdPath, `missing required frontmatter field(s): ${missing.join(', ')}`);
+    return null;
+  }
+
+  // Ensure name and description are strings (YAML can parse numbers, booleans, etc.)
+  if (typeof data.name !== 'string' || typeof data.description !== 'string') {
+    warnSkippedSkill(
+      skillMdPath,
+      `frontmatter "name" and "description" must be strings (got ${typeof data.name} and ${typeof data.description})`
+    );
+    return null;
+  }
+
+  // Skip internal skills unless:
+  // 1. INSTALL_INTERNAL_SKILLS=1 is set, OR
+  // 2. includeInternal option is true (e.g., when user explicitly requests a skill)
+  const metadata = isRecord(data.metadata) ? data.metadata : undefined;
+  const isInternal = metadata?.internal === true;
+  if (isInternal && !shouldInstallInternalSkills() && !options?.includeInternal) {
+    return null;
+  }
+
+  return {
+    name: sanitizeMetadata(data.name),
+    description: sanitizeMetadata(data.description),
+    path: dirname(skillMdPath),
+    rawContent: content,
+    metadata,
+  };
 }
 
 async function findSkillDirs(dir: string, depth = 0, maxDepth = 5): Promise<string[]> {
@@ -156,6 +177,7 @@ export async function discoverSkills(
 ): Promise<Skill[]> {
   const skills: Skill[] = [];
   const seenNames = new Set<string>();
+  const parsedSkillPaths = new Set<string>();
   const localLock = await readLocalLock(basePath);
   const lockedSkillNames = new Set(Object.keys(localLock.skills).map(normalizeSkillName));
 
@@ -195,11 +217,18 @@ export async function discoverSkills(
     return lockedSkillNames.has(skillName) || lockedSkillNames.has(directoryName);
   };
 
+  const parseSkillAt = async (skillDir: string): Promise<Skill | null> => {
+    const skillMdPath = resolve(skillDir, 'SKILL.md');
+    if (parsedSkillPaths.has(skillMdPath)) return null;
+    parsedSkillPaths.add(skillMdPath);
+    return parseSkillMd(skillMdPath, options);
+  };
+
   // If pointing directly at a skill, add it (and return early unless fullDepth is set).
   // If the root SKILL.md is an installed project skill tracked by skills-lock.json,
   // ignore it and continue scanning in case the repo also contains source skills.
   if (await hasSkillMd(searchPath)) {
-    let skill = await parseSkillMd(join(searchPath, 'SKILL.md'), options);
+    let skill = await parseSkillAt(searchPath);
     if (skill) {
       if (!isInstalledProjectSkill(skill)) {
         skill = enhanceSkill(skill);
@@ -236,7 +265,7 @@ export async function discoverSkills(
 
   const tryAddSkillAt = async (skillDir: string): Promise<boolean> => {
     if (!(await hasSkillMd(skillDir))) return false;
-    let skill = await parseSkillMd(join(skillDir, 'SKILL.md'), options);
+    let skill = await parseSkillAt(skillDir);
     if (!skill || seenNames.has(skill.name)) return true;
     if (isInstalledProjectSkill(skill)) return true;
     skill = enhanceSkill(skill);
@@ -284,7 +313,7 @@ export async function discoverSkills(
     const allSkillDirs = await findSkillDirs(searchPath);
 
     for (const skillDir of allSkillDirs) {
-      let skill = await parseSkillMd(join(skillDir, 'SKILL.md'), options);
+      let skill = await parseSkillAt(skillDir);
       if (skill && !seenNames.has(skill.name) && !isInstalledProjectSkill(skill)) {
         skill = enhanceSkill(skill);
         skills.push(skill);

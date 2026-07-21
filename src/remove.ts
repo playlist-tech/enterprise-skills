@@ -23,6 +23,41 @@ export interface RemoveOptions {
   all?: boolean;
 }
 
+/**
+ * Resolve requested skill names to canonical removal targets.
+ *
+ * On-disk folder names are the result of sanitizeName() at install time, but
+ * lock-file keys keep the original name, which may contain characters
+ * sanitizeName() rewrites — e.g. the ':' in plugin skills such as "ce:review"
+ * maps to the folder "ce-review". Matching purely on folder names therefore
+ * misses lock-only or name-mismatched skills (and stale lock entries whose
+ * folder is already gone). Every candidate is canonicalized by its sanitized
+ * name, preferring the lock key, so downstream disk cleanup (which
+ * re-sanitizes) and lock removal (which needs the exact key) both target the
+ * right thing.
+ */
+export function resolveSkillsToRemove(
+  requested: string[],
+  folderNames: string[],
+  lockKeys: string[] = []
+): string[] {
+  const identityBySanitized = new Map<string, string>();
+  for (const folder of folderNames) {
+    identityBySanitized.set(sanitizeName(folder), folder);
+  }
+  // Lock keys win: they carry the exact key needed for lock removal.
+  for (const key of lockKeys) {
+    identityBySanitized.set(sanitizeName(key), key);
+  }
+
+  const matched = new Set<string>();
+  for (const name of requested) {
+    const hit = identityBySanitized.get(sanitizeName(name));
+    if (hit) matched.add(hit);
+  }
+  return Array.from(matched);
+}
+
 export async function removeCommand(skillNames: string[], options: RemoveOptions) {
   // Auto-enable non-interactive mode when running inside an AI agent
   const agentResult = await detectAgent();
@@ -86,19 +121,13 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
     ? Object.keys((await readSkillLock()).skills)
     : Object.keys((await readLocalLock(cwd)).skills);
 
-  // Requested skills that are gone from disk but still have a stale lock entry.
-  // These must be cleaned up even when no skills remain installed on disk, otherwise
-  // the entry lingers forever (e.g. a skill deleted upstream during `skills update`).
-  const staleLockSkills =
-    !options.all && skillNames.length > 0
-      ? skillNames.filter(
-          (name) =>
-            !installedSkills.some((s) => s.toLowerCase() === name.toLowerCase()) &&
-            lockSkillsKeys.some((k) => k.toLowerCase() === name.toLowerCase())
-        )
+  const requestedSkills = options.all ? [...installedSkills, ...lockSkillsKeys] : skillNames;
+  const resolvedRequestedSkills =
+    options.all || skillNames.length > 0
+      ? resolveSkillsToRemove(requestedSkills, installedSkills, lockSkillsKeys)
       : [];
 
-  if (installedSkills.length === 0 && staleLockSkills.length === 0) {
+  if (installedSkills.length === 0 && resolvedRequestedSkills.length === 0) {
     p.outro(pc.yellow('No skills found to remove.'));
     return;
   }
@@ -118,19 +147,9 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
   let selectedSkills: string[] = [];
 
   if (options.all) {
-    selectedSkills = installedSkills;
+    selectedSkills = resolvedRequestedSkills;
   } else if (skillNames.length > 0) {
-    selectedSkills = installedSkills.filter((s) =>
-      skillNames.some((name) => name.toLowerCase() === s.toLowerCase())
-    );
-
-    // Requested skills missing from disk but still present in the lock file (computed
-    // above) are mapped back to their exact lock key so the stale entry can be cleaned up.
-    const mappedMissingSkills = staleLockSkills.map(
-      (name) => lockSkillsKeys.find((k) => k.toLowerCase() === name.toLowerCase()) || name
-    );
-
-    selectedSkills.push(...mappedMissingSkills);
+    selectedSkills = resolvedRequestedSkills;
 
     if (selectedSkills.length === 0) {
       p.log.error(`No matching skills found for: ${skillNames.join(', ')}`);
@@ -153,7 +172,7 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
       process.exit(0);
     }
 
-    selectedSkills = selected as string[];
+    selectedSkills = resolveSkillsToRemove(selected as string[], installedSkills, lockSkillsKeys);
   }
 
   let targetAgents: AgentType[];
