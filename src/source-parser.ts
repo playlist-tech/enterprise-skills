@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from 'path';
 import type { ParsedSource } from './types.ts';
+import { getGitHubHost, isGitHubHost } from './github-host.ts';
 
 /**
  * Extract owner/repo (or group/subgroup/repo for GitLab) from a parsed source
@@ -174,7 +175,7 @@ function looksLikeGitSource(input: string): boolean {
       const pathname = parsed.pathname;
 
       // Only treat GitHub fragments as refs for repo/tree URLs.
-      if (parsed.hostname === 'github.com') {
+      if (isGitHubHost(parsed.host)) {
         return /^\/[^/]+\/[^/]+(?:\.git)?(?:\/tree\/[^/]+(?:\/.*)?)?\/?$/.test(pathname);
       }
 
@@ -282,6 +283,32 @@ export function parseSource(input: string): ParsedSource {
     );
   }
 
+  // Explicit GitHub Enterprise URL. Use generic git handling for cloning and
+  // updates because the GitHub.com API/blob fast paths target the public host.
+  if (getGitHubHost() !== 'github.com' && /^https?:\/\//.test(input)) {
+    try {
+      const parsedUrl = new URL(input);
+      if (isGitHubHost(parsedUrl.host) && parsedUrl.host !== 'github.com') {
+        const segments = parsedUrl.pathname.split('/').filter(Boolean);
+        const [owner, rawRepo, marker, ref, ...subpathSegments] = segments;
+        if (owner && rawRepo) {
+          const repo = rawRepo.replace(/\.git$/, '');
+          const isTreeUrl = marker === 'tree' && ref;
+          return {
+            type: 'git',
+            url: `${parsedUrl.protocol}//${parsedUrl.host}/${owner}/${repo}.git`,
+            ...(isTreeUrl ? { ref } : fragmentRef ? { ref: fragmentRef } : {}),
+            ...(isTreeUrl && subpathSegments.length > 0
+              ? { subpath: sanitizeSubpath(subpathSegments.join('/')) }
+              : {}),
+          };
+        }
+      }
+    } catch {
+      // Fall through to the remaining source formats.
+    }
+  }
+
   // GitHub URL with path: https://github.com/owner/repo/tree/branch/path/to/skill
   const githubTreeWithPathMatch = input.match(/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)/);
   if (githubTreeWithPathMatch) {
@@ -366,13 +393,19 @@ export function parseSource(input: string): ParsedSource {
 
   // GitHub shorthand: owner/repo, owner/repo/path/to/skill, or owner/repo@skill-name
   // Exclude paths that start with . or / to avoid matching local paths
+  // GH_HOST selects a GitHub Enterprise host for shorthand inputs. Enterprise
+  // sources use the generic git path because GitHub.com API optimizations do
+  // not apply to them.
+  const githubHost = getGitHubHost();
+  const shorthandSourceType = githubHost === 'github.com' ? 'github' : 'git';
+
   // First check for @skill syntax: owner/repo@skill-name
   const atSkillMatch = input.match(/^([^/]+)\/([^/@]+)@(.+)$/);
   if (atSkillMatch && !input.includes(':') && !input.startsWith('.') && !input.startsWith('/')) {
     const [, owner, repo, skillFilter] = atSkillMatch;
     return {
-      type: 'github',
-      url: `https://github.com/${owner}/${repo}.git`,
+      type: shorthandSourceType,
+      url: `https://${githubHost}/${owner}/${repo}.git`,
       ...(fragmentRef ? { ref: fragmentRef } : {}),
       skillFilter: fragmentSkillFilter || skillFilter,
     };
@@ -382,8 +415,8 @@ export function parseSource(input: string): ParsedSource {
   if (shorthandMatch && !input.includes(':') && !input.startsWith('.') && !input.startsWith('/')) {
     const [, owner, repo, subpath] = shorthandMatch;
     return {
-      type: 'github',
-      url: `https://github.com/${owner}/${repo}.git`,
+      type: shorthandSourceType,
+      url: `https://${githubHost}/${owner}/${repo}.git`,
       ...(fragmentRef ? { ref: fragmentRef } : {}),
       subpath: subpath ? sanitizeSubpath(subpath) : subpath,
       ...(fragmentSkillFilter ? { skillFilter: fragmentSkillFilter } : {}),

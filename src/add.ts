@@ -1097,6 +1097,9 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     // telemetry gating — it should never block user-visible output.
     const ownerRepoRaw = getOwnerRepo(parsed);
     const repoPrivacyPromise: Promise<boolean | null> = (() => {
+      // The privacy endpoint below is GitHub.com-specific. In particular, do
+      // not send GitHub Enterprise repository names to the public API.
+      if (parsed.type !== 'github') return Promise.resolve(null);
       if (!ownerRepoRaw) return Promise.resolve(null);
       const ownerRepo = parseOwnerRepo(ownerRepoRaw);
       if (!ownerRepo) return Promise.resolve(null);
