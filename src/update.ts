@@ -11,10 +11,11 @@ import {
   formatSourceInput,
   buildUpdateInstallSource,
   buildLocalUpdateSource,
+  shouldUseFullDepthForUpdate,
 } from './update-source.ts';
 import { cloneRepo, cleanupTempDir } from './git.ts';
 import { discoverSkills } from './skills.ts';
-import { fetchRepoTree, findSkillMdPaths, getSkillFolderHashFromTree } from './blob.ts';
+import { fetchRepoTree, getSkillFolderHashFromTree } from './blob.ts';
 import { removeCommand } from './remove.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import { track } from './telemetry.ts';
@@ -347,7 +348,9 @@ export async function updateGlobalSkills(
           continue;
         }
 
-        const discoveredPaths = findSkillMdPaths(tree);
+        const discoveredPaths = tree.tree
+          .filter((entry) => entry.type === 'blob')
+          .map((entry) => entry.path);
 
         const allLockedForSource = Object.entries(lock.skills)
           .filter(([_, entry]) => entry.source === source)
@@ -377,9 +380,11 @@ export async function updateGlobalSkills(
       }
 
       tempDir = await cloneRepo(sourceUrl, firstEntry.ref);
-      const discoveredPaths = (await discoverSkills(tempDir)).map((skill) => {
-        return join(relative(tempDir!, skill.path), 'SKILL.md').split(sep).join('/');
-      });
+      const discoveredPaths = (await discoverSkills(tempDir, undefined, { fullDepth: true })).map(
+        (skill) => {
+          return join(relative(tempDir!, skill.path), 'SKILL.md').split(sep).join('/');
+        }
+      );
 
       const allLockedForSource = Object.entries(lock.skills)
         .filter(([_, entry]) => entry.source === source)
@@ -460,16 +465,21 @@ export async function updateGlobalSkills(
       );
       continue;
     }
-    const result = spawnSync(process.execPath, [cliEntry, 'add', installUrl, '-g', '-y'], {
-      stdio: ['inherit', 'pipe', 'pipe'],
-      encoding: 'utf-8',
-      // Never spawn through a shell. process.execPath is an absolute path to the
-      // node binary, so no shell is needed to resolve it. installUrl is derived
-      // from the lock file (and ref is URL-decoded, so influenceable by whoever
-      // publishes a skill); a shell on Windows would let metacharacters in that
-      // value inject commands. Passing argv directly keeps it inert.
-      shell: false,
-    });
+    const fullDepthArgs = shouldUseFullDepthForUpdate(update.entry) ? ['--full-depth'] : [];
+    const result = spawnSync(
+      process.execPath,
+      [cliEntry, 'add', installUrl, ...fullDepthArgs, '-g', '-y'],
+      {
+        stdio: ['inherit', 'pipe', 'pipe'],
+        encoding: 'utf-8',
+        // Never spawn through a shell. process.execPath is an absolute path to the
+        // node binary, so no shell is needed to resolve it. installUrl is derived
+        // from the lock file (and ref is URL-decoded, so influenceable by whoever
+        // publishes a skill); a shell on Windows would let metacharacters in that
+        // value inject commands. Passing argv directly keeps it inert.
+        shell: false,
+      }
+    );
 
     if (result.status === 0) {
       successCount++;
@@ -576,7 +586,7 @@ export async function updateProjectSkills(
 
     try {
       tempDir = await cloneRepo(sourceUrl, ref);
-      const discovered = await discoverSkills(tempDir);
+      const discovered = await discoverSkills(tempDir, undefined, { fullDepth: true });
 
       const discoveredPaths = discovered.map((s) => {
         const relPath = relative(tempDir!, s.path);
@@ -618,10 +628,20 @@ export async function updateProjectSkills(
       const subagentArgs = skill.entry.subagents?.length
         ? ['--subagent', ...skill.entry.subagents.map((s) => (s === '' ? 'root' : s))]
         : [];
+      const fullDepthArgs = shouldUseFullDepthForUpdate(skill.entry) ? ['--full-depth'] : [];
 
       const result = spawnSync(
         process.execPath,
-        [cliEntry, 'add', installUrl, '--skill', skill.name, ...subagentArgs, '-y'],
+        [
+          cliEntry,
+          'add',
+          installUrl,
+          '--skill',
+          skill.name,
+          ...subagentArgs,
+          ...fullDepthArgs,
+          '-y',
+        ],
         {
           stdio: ['inherit', 'pipe', 'pipe'],
           encoding: 'utf-8',
