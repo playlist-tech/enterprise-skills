@@ -256,13 +256,13 @@ description: Configure the harness: Hooks, MCP Servers, Skills
   });
 
   it('strips terminal escapes from malformed-skill warnings', async () => {
-    const skillDir = join(testDir, 'skills', 'bad-\x1b[31mred');
+    const skillDir = join(testDir, 'skills', 'broken-skill');
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(
       join(skillDir, 'SKILL.md'),
       `---
 name: broken-skill
-description: Configure the harness: Hooks
+description: Configure \x1b[31mthe harness: Hooks
 ---
 `
     );
@@ -270,7 +270,9 @@ description: Configure the harness: Hooks
     await discoverSkills(testDir);
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(String(warnSpy.mock.calls[0]?.[0])).not.toContain('\x1b');
+    const warning = String(warnSpy.mock.calls[0]?.[0]);
+    expect(warning).toContain('Configure the harness: Hooks');
+    expect(warning).not.toContain('\x1b');
   });
 
   it('warns when name is missing', async () => {
