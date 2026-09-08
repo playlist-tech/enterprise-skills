@@ -17,11 +17,13 @@ const AGENT_PROJECT_SKILL_DIRS = [
   '.codex/skills',
   '.commandcode/skills',
   '.continue/skills',
+  '.factory/skills',
   '.github/skills',
   '.goose/skills',
   '.grok/skills',
   '.iflow/skills',
   '.junie/skills',
+  '.kilo/skills',
   '.kilocode/skills',
   '.kimchi/skills',
   '.kiro/skills',
@@ -61,7 +63,7 @@ export function shouldInstallInternalSkills(): boolean {
   return envValue === '1' || envValue === 'true';
 }
 
-async function hasSkillMd(dir: string): Promise<boolean> {
+export async function hasSkillMd(dir: string): Promise<boolean> {
   try {
     const skillPath = join(dir, 'SKILL.md');
     const stats = await stat(skillPath);
