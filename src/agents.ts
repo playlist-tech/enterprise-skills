@@ -101,6 +101,7 @@ export const agents: Record<AgentType, AgentConfig> = {
     displayName: 'Antigravity',
     skillsDir: '.agents/skills',
     globalSkillsDir: join(home, '.gemini/antigravity/skills'),
+    showInUniversalPrompt: false,
     detectInstalled: async () => {
       return existsSync(join(home, '.gemini/antigravity'));
     },
@@ -110,6 +111,7 @@ export const agents: Record<AgentType, AgentConfig> = {
     displayName: 'Antigravity CLI',
     skillsDir: '.agents/skills',
     globalSkillsDir: join(home, '.gemini/antigravity-cli/skills'),
+    showInUniversalPrompt: false,
     detectInstalled: async () => {
       return existsSync(join(home, '.gemini/antigravity-cli'));
     },
@@ -276,6 +278,7 @@ export const agents: Record<AgentType, AgentConfig> = {
     displayName: 'Deep Agents',
     skillsDir: '.agents/skills',
     globalSkillsDir: join(home, '.deepagents/agent/skills'),
+    showInUniversalPrompt: false,
     detectInstalled: async () => {
       return existsSync(join(home, '.deepagents'));
     },
@@ -658,6 +661,7 @@ export const agents: Record<AgentType, AgentConfig> = {
     displayName: 'Sarvam Code',
     skillsDir: '.agents/skills',
     globalSkillsDir: join(home, '.agents/skills'),
+    showInUniversalPrompt: false,
     detectInstalled: async () => {
       return existsSync(sarvamHome);
     },
