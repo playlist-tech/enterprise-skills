@@ -66,6 +66,23 @@ describe('add command', () => {
     expect(result.exitCode).toBe(1);
   });
 
+  it('special-cases notion and requires the ntn CLI', () => {
+    const result = runCli(['add', 'notion', '--list'], testDir, {
+      PATH: join(testDir, 'missing-bin'),
+    });
+
+    expect(result.stdout).toContain('Notion CLI (ntn) is required');
+    const docsLine = result.stdout
+      .split('\n')
+      .find((line) => line.includes('https://developers.notion.com/cli/get-started/overview'));
+    expect(docsLine?.replace(/^\s*│?\s*/, '')).toBe(
+      'https://developers.notion.com/cli/get-started/overview'
+    );
+    expect(result.stdout).toContain('ntn login');
+    expect(result.stdout).not.toContain('Cloning repository');
+    expect(result.exitCode).toBe(1);
+  });
+
   it('should list skills from local path with --list flag', () => {
     // Create a test skill
     const skillDir = join(testDir, 'test-skill');
