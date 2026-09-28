@@ -32,7 +32,7 @@ vi.mock('@clack/prompts', () => {
       step: noop,
       success: noop,
     },
-    spinner: () => ({ start: noop, stop: noop }),
+    spinner: () => ({ start: noop, stop: noop, message: noop }),
   };
 });
 
@@ -42,10 +42,27 @@ vi.mock('../src/detect-agent.ts', () => ({
   ensureUniversalAgents: vi.fn((agents: string[]) => agents),
 }));
 
-vi.mock('../src/git.ts', () => ({
-  cloneRepo: vi.fn(),
-  cleanupTempDir: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock('../src/git.ts', () => {
+  class GitCloneError extends Error {
+    readonly url: string;
+    readonly isTimeout: boolean;
+    readonly isAuthError: boolean;
+
+    constructor(message: string, url: string, isTimeout = false, isAuthError = false) {
+      super(message);
+      this.name = 'GitCloneError';
+      this.url = url;
+      this.isTimeout = isTimeout;
+      this.isAuthError = isAuthError;
+    }
+  }
+
+  return {
+    GitCloneError,
+    cloneRepo: vi.fn(),
+    cleanupTempDir: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 import { runAdd } from '../src/add.ts';
 import { cloneRepo } from '../src/git.ts';
