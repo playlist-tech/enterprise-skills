@@ -68,16 +68,28 @@ pending; disclose that status in the handoff.
 Before writing, reread the triggering PR. Stop if it closed, its head changed, a disqualifying
 label appeared, or `triage:bug-fix` is now present.
 
+Draft the comment before writing. Use exactly this Markdown structure, with a blank line
+between the opening sentence and the three bullets. Replace the placeholders; do not include
+code-fence or blockquote markers in the published comment:
+
+```markdown
+@quuu — bug-fix candidate.
+
+- **Fix:** <user-visible failure corrected, one short sentence>.
+- **Tests:** <regression behavior covered; name at most one test file>.
+- **CI:** <observed current-head status or unavailable> (head `<8-character SHA>`).
+```
+
+The entire comment must be at most 500 characters and 75 words, including Markdown. Check
+both limits and the blank line before publishing; shorten the draft if necessary. Use plain
+language. Omit function names, code excerpts, full test names, full commit hashes, repeated
+caveats, and explanations of the implementation mechanism. Keep detailed reasoning, the full
+assessed SHA, and delivery results in the internal workflow output. The public comment is a
+maintainer handoff; the opening calls it a candidate and does not imply merge approval.
+
 Use `add_label` once to add `triage:bug-fix`. Only after confirmed label success, use `comment`
-once on the same PR with this shape, replacing the placeholders with concise evidence:
-
-> @quuu — bug-fix candidate: <existing failure and how this patch corrects it>.
-> Regression coverage: `<test file / test case>` — <behavior asserted>.
-> Verification: <observed current-head CI status or explicit limitation>.
-> Assessed head: `<head SHA>`. This is triage, not approval to merge.
-
-Keep the comment under 1,200 characters. Do not repeat the mention or add a second comment in
-this run. The triage label suppresses later assessments; preserve every other label. If label
-or comment delivery fails or is ambiguous, report the partial result in the workflow output
-and do not blindly repeat a comment. The tools do not offer comment-history reconciliation or
-an atomic label-and-comment operation, so do not claim exactly-once delivery.
+once to publish the checked draft on the same PR. Do not repeat the mention or add a second
+comment in this run. The triage label suppresses later assessments; preserve every other
+label. If label or comment delivery fails or is ambiguous, report the partial result in the
+workflow output and do not blindly repeat a comment. The tools do not offer comment-history
+reconciliation or an atomic label-and-comment operation, so do not claim exactly-once delivery.

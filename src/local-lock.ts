@@ -112,14 +112,19 @@ export async function writeLocalLock(lock: LocalSkillLockFile, cwd?: string): Pr
   const lockPath = getLocalLockPath(lockDir);
 
   // Sort skills alphabetically for deterministic output / clean diffs
-  const sortedSkills: Record<string, LocalSkillLockEntry> = {};
-  for (const key of Object.keys(lock.skills).sort()) {
-    const entry = lock.skills[key]!;
-    sortedSkills[key] =
-      entry.sourceType === 'local'
-        ? { ...entry, source: getPortableLocalSource(entry.source, lockDir) }
-        : entry;
-  }
+  const sortedSkills = Object.fromEntries(
+    Object.keys(lock.skills)
+      .sort()
+      .map((key): [string, LocalSkillLockEntry] => {
+        const entry = lock.skills[key]!;
+        return [
+          key,
+          entry.sourceType === 'local'
+            ? { ...entry, source: getPortableLocalSource(entry.source, lockDir) }
+            : entry,
+        ];
+      })
+  );
 
   const sorted: LocalSkillLockFile = { version: lock.version, skills: sortedSkills };
   const content = JSON.stringify(sorted, null, 2) + '\n';
@@ -196,7 +201,7 @@ export async function addSkillToLocalLock(
   cwd?: string
 ): Promise<void> {
   const lock = await readLocalLock(cwd);
-  lock.skills[skillName] = entry;
+  lock.skills = { ...lock.skills, [skillName]: entry };
   await writeLocalLock(lock, cwd);
 }
 
@@ -206,7 +211,7 @@ export async function addSkillToLocalLock(
 export async function removeSkillFromLocalLock(skillName: string, cwd?: string): Promise<boolean> {
   const lock = await readLocalLock(cwd);
 
-  if (!(skillName in lock.skills)) {
+  if (!Object.hasOwn(lock.skills, skillName)) {
     return false;
   }
 

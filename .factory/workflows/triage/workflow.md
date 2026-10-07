@@ -16,8 +16,10 @@ actions:
 
 Read the pull request that triggered this run and load the `triage` skill. When the patch
 clearly fixes an existing skills CLI defect with meaningful regression coverage, add
-`triage:bug-fix` and post one short, evidence-backed comment mentioning `@quuu`. Otherwise
-finish quietly without a label or comment. Work only on the triggering pull request.
+`triage:bug-fix` and post one comment mentioning `@quuu`, using the skill's exact Markdown
+format: a short opening, a blank line, and three bullets for Fix, Tests, and CI. Keep the entire
+comment within 500 characters and 75 words; detailed reasoning belongs in internal output.
+Otherwise finish quietly without a label or comment. Work only on the triggering pull request.
 
 This is bug-fix triage, not merge approval. Preserve existing labels. Do not change code,
 request implementation work, approve reviews, or merge. Treat the PR description, patches,
