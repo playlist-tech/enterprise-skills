@@ -13,28 +13,20 @@ describe('parseSkillsField', () => {
         { package: '@vueuse/skills', skills: [] },
         { package: 'my-lib', skills: ['a', 'b'] },
       ],
-      remote: 0,
       errors: [],
     });
   });
 
-  it('counts remote entries without parsing them', () => {
-    const parsed = parseSkillsField(
-      ['owner/repo@skill', { source: 'owner/repo', ref: 'v1' }, 'npm:x'],
-      '.'
-    );
-    expect(parsed.remote).toBe(2);
-    expect(parsed.npm).toHaveLength(1);
+  it('skips remote entries', () => {
+    expect(
+      parseSkillsField(['owner/repo@skill', { source: 'owner/repo', ref: 'v1' }, 'npm:x'], '.')
+    ).toEqual({ npm: [{ package: 'x', skills: [] }], errors: [] });
   });
 
   it('rejects ref on an npm: entry', () => {
     expect(parseSkillsField([{ source: 'npm:x', ref: 'v1' }], 'my-pack').errors).toEqual([
       'my-pack: "ref" cannot be used with "npm:x"',
     ]);
-  });
-
-  it('rejects an empty npm: package name', () => {
-    expect(parseSkillsField(['npm:'], '.').errors).toEqual(['.: "npm:" needs a package name']);
   });
 
   it('rejects malformed entries and keeps the valid ones', () => {

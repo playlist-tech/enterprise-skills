@@ -32,6 +32,7 @@ import {
 import type { Skill, AgentType } from './types.ts';
 import { track } from './telemetry.ts';
 import { detectAgent, getAgentType } from './detect-agent.ts';
+import { getLastSelectedAgents, saveSelectedAgents } from './skill-lock.ts';
 import { parseSkillsField } from './skills-field.ts';
 
 const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
@@ -140,9 +141,6 @@ async function discoverPackageSkills(
   return skills;
 }
 
-/** A problem in the project's own `skills` field; sync stops instead of guessing. */
-class SkillsFieldError extends Error {}
-
 /**
  * Node's node_modules lookup from `from` (realpath, then walk up), so the
  * declaring package's own dependencies resolve in pnpm's isolated layout.
@@ -166,11 +164,11 @@ function findInstalledPackage(from: string, name: string): string | undefined {
  */
 async function discoverNodeModuleSkills(
   cwd: string
-): Promise<{ skills: PackageSkill[]; warnings: string[]; remoteEntries: number }> {
+): Promise<{ skills: PackageSkill[]; warnings: string[]; errors: string[] }> {
   const warnings: string[] = [];
-  let remoteEntries = 0;
+  const errors: string[] = [];
   const pkg = await readPackageJson(cwd);
-  if (!pkg) return { skills: [], warnings, remoteEntries };
+  if (!pkg) return { skills: [], warnings, errors };
 
   const skills: PackageSkill[] = [];
   const seen = new Set<string>();
@@ -191,15 +189,10 @@ async function discoverNodeModuleSkills(
   );
   await add(shipped.flat());
 
-  // `depth` is what this declarer's npm: targets get; strict fields fail the run
+  // `depth` is what this declarer's npm: targets get
   const declarers = [
-    { name: '.', dir: cwd, depth: 0, strict: true },
-    ...deps.map((name) => ({
-      name,
-      dir: join(cwd, 'node_modules', name),
-      depth: 1,
-      strict: false,
-    })),
+    { name: '.', dir: cwd, depth: 0 },
+    ...deps.map((name) => ({ name, dir: join(cwd, 'node_modules', name), depth: 1 })),
   ];
   const visited = new Set<string>();
   for (const declarer of declarers) {
@@ -207,22 +200,23 @@ async function discoverNodeModuleSkills(
     if (!dir || visited.has(dir)) continue;
     visited.add(dir);
 
+    // the project's own field must be valid; a dependency's only produces warnings
+    const problems = declarer.name === '.' ? errors : warnings;
     const field = (await readPackageJson(dir))?.skills;
     if (field === undefined) continue;
     if (!Array.isArray(field)) {
       // a dependency may use the key for something else
-      if (declarer.strict) throw new SkillsFieldError('package.json: "skills" must be an array');
+      if (problems === errors) errors.push('package.json: "skills" must be an array');
       continue;
     }
 
     const parsed = parseSkillsField(field, declarer.name);
-    remoteEntries += parsed.remote;
-    const problems = [...parsed.errors];
+    problems.push(...parsed.errors);
     for (const request of parsed.npm) {
       const target = findInstalledPackage(dir, request.package);
       if (!target) {
         problems.push(
-          `${declarer.name}: cannot resolve "npm:${request.package}"; add it to the dependencies of ${declarer.name === '.' ? 'package.json' : declarer.name}`
+          `${declarer.name}: cannot resolve "npm:${request.package}"; is it a dependency?`
         );
         continue;
       }
@@ -237,18 +231,11 @@ async function discoverNodeModuleSkills(
           )
           .map((skill) => ({ ...skill, via: declarer.name }))
       );
-      declarers.push({
-        name: request.package,
-        dir: target,
-        depth: declarer.depth + 1,
-        strict: false,
-      });
+      declarers.push({ name: request.package, dir: target, depth: declarer.depth + 1 });
     }
-    if (declarer.strict && problems.length > 0) throw new SkillsFieldError(problems.join('\n'));
-    warnings.push(...problems);
   }
 
-  return { skills, warnings, remoteEntries };
+  return { skills, warnings, errors };
 }
 
 function isUnderNodeModules(path: string): boolean {
@@ -406,6 +393,39 @@ async function resolveConflicts(
   return { install, skipped };
 }
 
+/**
+ * Ask which agents to sync to, with universal agents always included.
+ * Preselects the last choice from `skills add` or sync when it is still offered.
+ */
+async function promptForAgentChoice(
+  choices: AgentType[],
+  fallback: AgentType[]
+): Promise<AgentType[] | symbol> {
+  const universalAgents = getUniversalAgents();
+  const visibleUniversalAgents = getVisibleUniversalAgents();
+  const last = await getLastSelectedAgents().catch(() => undefined);
+  const remembered = choices.filter((a) => last?.includes(a));
+
+  const selected = await searchMultiselect({
+    message: 'Which agents do you want to install to?',
+    items: choices.map((a) => ({
+      value: a,
+      label: agents[a].displayName,
+      hint: agents[a].skillsDir,
+    })),
+    initialSelected: remembered.length > 0 ? remembered : fallback,
+    lockedSection: {
+      title: 'Universal (.agents/skills)',
+      items: visibleUniversalAgents.map((a) => ({ value: a, label: agents[a].displayName })),
+      hiddenCount: universalAgents.length - visibleUniversalAgents.length,
+    },
+  });
+  if (!isCancelled(selected)) {
+    await saveSelectedAgents(selected as string[]).catch(() => {});
+  }
+  return selected as AgentType[] | symbol;
+}
+
 export async function runSync(args: string[], options: SyncOptions = {}): Promise<void> {
   const cwd = process.cwd();
 
@@ -442,13 +462,10 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
 
   // 1. Discover skills from node_modules
   spinner.start('Scanning node_modules for skills…');
-  let discovery: Awaited<ReturnType<typeof discoverNodeModuleSkills>>;
-  try {
-    discovery = await discoverNodeModuleSkills(cwd);
-  } catch (error) {
-    if (!(error instanceof SkillsFieldError)) throw error;
+  const discovery = await discoverNodeModuleSkills(cwd);
+  if (discovery.errors.length > 0) {
     spinner.stop(pc.red('Invalid skills field'));
-    for (const line of error.message.split('\n')) p.log.error(line);
+    for (const error of discovery.errors) p.log.error(error);
     p.outro(pc.red('Fix the "skills" field in package.json and run sync again.'));
     process.exitCode = 1;
     return;
@@ -465,13 +482,6 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
       : `Found ${pc.green(String(discoveredSkills.length))} skill${discoveredSkills.length > 1 ? 's' : ''} in node_modules`
   );
   for (const warning of discovery.warnings) p.log.warn(warning);
-  if (discovery.remoteEntries > 0) {
-    p.log.info(
-      pc.dim(
-        `Skipped ${discovery.remoteEntries} remote "skills" entr${discovery.remoteEntries === 1 ? 'y' : 'ies'}; only npm: entries are synced for now`
-      )
-    );
-  }
 
   const localLock = await readLocalLock(cwd);
   if (options.cleanup !== false) {
@@ -491,8 +501,7 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
 
   // Show discovered skills
   for (const skill of discoveredSkills) {
-    const via = skill.via ? ` via ${skill.via}` : '';
-    p.log.info(`${pc.cyan(skill.name)} ${pc.dim(`from ${skill.packageName}${via}`)}`);
+    p.log.info(`${pc.cyan(skill.name)} ${pc.dim(`from ${skill.packageName}`)}`);
     if (skill.description) {
       p.log.message(pc.dim(`  ${skill.description}`));
     }
@@ -502,7 +511,6 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
   let targetAgents: AgentType[];
   const validAgents = Object.keys(agents);
   const universalAgents = getUniversalAgents();
-  const visibleUniversalAgents = getVisibleUniversalAgents();
 
   if (options.agent?.includes('*')) {
     targetAgents = validAgents as AgentType[];
@@ -521,40 +529,9 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
     const totalAgents = Object.keys(agents).length;
     spinner.stop(`${totalAgents} agents`);
 
-    if (installedAgents.length === 0) {
-      if (options.yes) {
-        targetAgents = universalAgents;
-        p.log.info('Installing to universal agents');
-      } else {
-        const otherAgents = getNonUniversalAgents();
-
-        const otherChoices = otherAgents.map((a) => ({
-          value: a,
-          label: agents[a].displayName,
-          hint: agents[a].skillsDir,
-        }));
-
-        const selected = await searchMultiselect({
-          message: 'Which agents do you want to install to?',
-          items: otherChoices,
-          initialSelected: [],
-          lockedSection: {
-            title: 'Universal (.agents/skills)',
-            items: visibleUniversalAgents.map((a) => ({
-              value: a,
-              label: agents[a].displayName,
-            })),
-            hiddenCount: universalAgents.length - visibleUniversalAgents.length,
-          },
-        });
-
-        if (isCancelled(selected)) {
-          p.cancel('Sync cancelled');
-          process.exit(0);
-        }
-
-        targetAgents = selected as AgentType[];
-      }
+    if (installedAgents.length === 0 && options.yes) {
+      targetAgents = universalAgents;
+      p.log.info('Installing to universal agents');
     } else if (installedAgents.length === 1 || options.yes) {
       // Ensure universal agents are included
       targetAgents = [...installedAgents];
@@ -564,34 +541,19 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
         }
       }
     } else {
-      const otherAgents = getNonUniversalAgents().filter((a) => installedAgents.includes(a));
-
-      const otherChoices = otherAgents.map((a) => ({
-        value: a,
-        label: agents[a].displayName,
-        hint: agents[a].skillsDir,
-      }));
-
-      const selected = await searchMultiselect({
-        message: 'Which agents do you want to install to?',
-        items: otherChoices,
-        initialSelected: installedAgents.filter((a) => !universalAgents.includes(a)),
-        lockedSection: {
-          title: 'Universal (.agents/skills)',
-          items: visibleUniversalAgents.map((a) => ({
-            value: a,
-            label: agents[a].displayName,
-          })),
-          hiddenCount: universalAgents.length - visibleUniversalAgents.length,
-        },
-      });
-
+      // No detected agents: offer all; several: offer the detected ones
+      const choices = getNonUniversalAgents().filter(
+        (a) => installedAgents.length === 0 || installedAgents.includes(a)
+      );
+      const selected = await promptForAgentChoice(
+        choices,
+        installedAgents.filter((a) => !universalAgents.includes(a))
+      );
       if (isCancelled(selected)) {
         p.cancel('Sync cancelled');
         process.exit(0);
       }
-
-      targetAgents = selected as AgentType[];
+      targetAgents = selected;
     }
   }
 

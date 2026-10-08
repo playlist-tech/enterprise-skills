@@ -611,6 +611,17 @@ describe('experimental_sync command', () => {
       expect(readLock().skills['leaf-skill'].via).toBe('pack-b');
     });
 
+    it('installs a skill once when two packs name the same package', () => {
+      declareProject(['pack-a', 'pack-b'], undefined);
+      createPack(join(testDir, 'node_modules', 'pack-a'), 'pack-a', ['npm:shared-lib']);
+      createPack(join(testDir, 'node_modules', 'pack-b'), 'pack-b', ['npm:shared-lib']);
+      writeSkill(join(createPackage('shared-lib'), 'skills', 'shared'), 'shared');
+
+      sync();
+
+      expect(installed('shared')).toBe(true);
+    });
+
     it('prefers a direct dependency over a transitive package with the same skill', () => {
       declareProject(['direct-lib', 'my-pack'], undefined);
       writeSkill(join(createPackage('direct-lib'), 'skills', 'migrate'), 'migrate');
@@ -663,15 +674,6 @@ describe('experimental_sync command', () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain('odd-lib:');
-    });
-
-    it('reports remote entries as not synced yet', () => {
-      declareProject([], ['owner/repo@skill']);
-
-      const result = sync();
-
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('Skipped 1 remote "skills" entry');
     });
 
     it('removes field skills when the pack is removed', () => {

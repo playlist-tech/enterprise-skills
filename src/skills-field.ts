@@ -2,19 +2,17 @@
  * The `skills` field of package.json: skills a package wants installed
  * without shipping their files. Grammar: https://github.com/antfu/skills-npm/blob/main/SPEC.md
  */
-export type SkillsFieldEntry = string | { source: string; skills?: string[]; ref?: string };
+type SkillsFieldEntry = string | { source: string; skills?: string[]; ref?: string };
 
 /** `npm:<package>`: the skills shipped by an installed package. */
-export interface NpmSkillsRequest {
+interface NpmSkillsRequest {
   package: string;
   /** Folder or sanitized skill names to keep; empty means all. */
   skills: string[];
 }
 
-export interface ParsedSkillsField {
+interface ParsedSkillsField {
   npm: NpmSkillsRequest[];
-  /** Number of remote (git) entries; installing them is not supported yet. */
-  remote: number;
   errors: string[];
 }
 
@@ -35,26 +33,21 @@ function isSkillsFieldEntry(value: unknown): value is SkillsFieldEntry {
 
 /** Parse the entries of `declarer`'s `skills` field. Problems are returned, not thrown. */
 export function parseSkillsField(entries: unknown[], declarer: string): ParsedSkillsField {
-  const parsed: ParsedSkillsField = { npm: [], remote: 0, errors: [] };
+  const parsed: ParsedSkillsField = { npm: [], errors: [] };
 
   for (const raw of entries) {
     if (!isSkillsFieldEntry(raw)) {
       parsed.errors.push(`${declarer}: invalid "skills" entry ${JSON.stringify(raw)}`);
       continue;
     }
-    const entry = typeof raw === 'string' ? { source: raw } : raw;
-    if (!entry.source.startsWith(NPM_PREFIX)) {
-      parsed.remote++;
-      continue;
-    }
+    const { source, skills = [], ref } = typeof raw === 'string' ? { source: raw } : raw;
+    // remote (git) entries are not synced yet
+    if (!source.startsWith(NPM_PREFIX)) continue;
 
-    const name = entry.source.slice(NPM_PREFIX.length);
-    if (!name) {
-      parsed.errors.push(`${declarer}: "npm:" needs a package name`);
-    } else if ('ref' in entry && entry.ref !== undefined) {
-      parsed.errors.push(`${declarer}: "ref" cannot be used with "${entry.source}"`);
+    if (ref !== undefined) {
+      parsed.errors.push(`${declarer}: "ref" cannot be used with "${source}"`);
     } else {
-      parsed.npm.push({ package: name, skills: ('skills' in entry && entry.skills) || [] });
+      parsed.npm.push({ package: source.slice(NPM_PREFIX.length), skills });
     }
   }
 
