@@ -36,7 +36,7 @@ describe('runInstallFromLock', () => {
     await runInstallFromLock([]);
 
     expect(add.installFromSource).toHaveBeenCalledWith(
-      'https://gitlab.example.com/acme/skills.git',
+      expect.objectContaining({ url: 'https://gitlab.example.com/acme/skills.git' }),
       { skills: ['skill-a'], agents: ['cursor'] }
     );
   });

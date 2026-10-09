@@ -1302,6 +1302,11 @@ function getSkillRepoPaths(resolved: ResolvedSkills, skills: Skill[]): Record<st
   return skillFiles;
 }
 
+/** The `source` a project lock entry records for `parsed`. */
+export function getProjectLockSource(parsed: ParsedSource): string {
+  return getLockSource(parsed.url, getOwnerRepo(parsed)) || parsed.url;
+}
+
 function projectLockEntry(
   parsed: ParsedSource,
   skillPath: string | undefined,
@@ -1309,7 +1314,7 @@ function projectLockEntry(
 ): LocalSkillLockEntry {
   const sourceUrl = getProjectLockSourceUrl(parsed.type, parsed.url);
   return {
-    source: getLockSource(parsed.url, getOwnerRepo(parsed)) || parsed.url,
+    source: getProjectLockSource(parsed),
     ...(sourceUrl && { sourceUrl }),
     ref: parsed.ref,
     sourceType: parsed.type,
@@ -1325,25 +1330,31 @@ interface SourceInstallResult {
 }
 
 /**
- * Install skills from `source` at project scope without prompting or exiting:
- * keep `skills` (all when empty), install into `agents`, record the project lock.
+ * Install skills from `parsed` at project scope without prompting or exiting:
+ * keep `skills` (all when empty), let `select` drop any, install into
+ * `agents`, and record the project lock (with `via` when given).
  */
 export async function installFromSource(
-  source: string,
-  options: { skills: string[]; agents: AgentType[] }
+  parsed: ParsedSource,
+  options: {
+    skills: string[];
+    agents: AgentType[];
+    via?: string;
+    select?: (skills: Skill[]) => Promise<Skill[]>;
+  }
 ): Promise<SourceInstallResult> {
-  const parsed = parseSource(source);
   const spinner = p.spinner();
   let resolved: ResolvedSkills | null = null;
   try {
     resolved = await resolveSkills(parsed, { includeInternal: options.skills.length > 0 }, spinner);
-    const selected =
+    let selected =
       options.skills.length > 0 ? filterSkills(resolved.skills, options.skills) : resolved.skills;
     if (selected.length === 0) {
       spinner.stop(pc.red('No matching skills found'));
       return { installed: [], failed: [], error: 'No matching skills found' };
     }
     spinner.stop(`Found ${pc.green(selected.length)} skill${selected.length > 1 ? 's' : ''}`);
+    if (options.select) selected = await options.select(selected);
 
     const results = await installToTargets(
       resolved,
@@ -1356,7 +1367,7 @@ export async function installFromSource(
     for (const skill of selected) {
       if (!installed.has(getSkillDisplayName(skill))) continue;
       const entry = projectLockEntry(parsed, repoPaths[skill.name], await sourceSkillHash(skill));
-      await addSkillToLocalLock(skill.name, entry);
+      await addSkillToLocalLock(skill.name, { ...entry, ...(options.via && { via: options.via }) });
     }
     return {
       installed: [...installed],

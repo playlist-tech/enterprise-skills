@@ -13,14 +13,57 @@ describe('parseSkillsField', () => {
         { package: '@vueuse/skills', skills: [] },
         { package: 'my-lib', skills: ['a', 'b'] },
       ],
+      remote: [],
       errors: [],
     });
   });
 
-  it('skips remote entries', () => {
+  it('parses git sources, folding @skill and ref into the request', () => {
+    const { remote, errors } = parseSkillsField(
+      [
+        'owner/repo@one',
+        { source: 'owner/repo', ref: 'v1', skills: ['two'] },
+        'https://gitlab.com/group/repo/-/tree/main/skills',
+      ],
+      '.'
+    );
+    expect(errors).toEqual([]);
+    expect(remote).toEqual([
+      {
+        parsed: expect.objectContaining({
+          type: 'github',
+          url: 'https://github.com/owner/repo.git',
+        }),
+        skills: ['one'],
+      },
+      { parsed: expect.objectContaining({ type: 'github', ref: 'v1' }), skills: ['two'] },
+      {
+        parsed: expect.objectContaining({ type: 'gitlab', ref: 'main', subpath: 'skills' }),
+        skills: [],
+      },
+    ]);
+  });
+
+  it('rejects sources that are not git-hosted', () => {
+    expect(parseSkillsField(['./local', 'https://example.com/skills'], 'my-pack').errors).toEqual([
+      'my-pack: "./local" is not a git source',
+      'my-pack: "https://example.com/skills" is not a git source',
+    ]);
+  });
+
+  it('rejects a ref on a source that already has one', () => {
     expect(
-      parseSkillsField(['owner/repo@skill', { source: 'owner/repo', ref: 'v1' }, 'npm:x'], '.')
-    ).toEqual({ npm: [{ package: 'x', skills: [] }], errors: [] });
+      parseSkillsField(
+        [
+          { source: 'owner/repo#v1', ref: 'v2' },
+          { source: 'https://github.com/o/r/tree/main/x', ref: 'v2' },
+        ],
+        '.'
+      ).errors
+    ).toEqual([
+      '.: "owner/repo#v1" already has a ref; remove "ref"',
+      '.: "https://github.com/o/r/tree/main/x" already has a ref; remove "ref"',
+    ]);
   });
 
   it('rejects ref on an npm: entry', () => {
