@@ -42,23 +42,10 @@ vi.mock('../src/detect-agent.ts', () => ({
   ensureUniversalAgents: vi.fn((agents: string[]) => agents),
 }));
 
-vi.mock('../src/git.ts', () => {
-  class GitCloneError extends Error {
-    readonly url: string;
-    readonly isTimeout: boolean;
-    readonly isAuthError: boolean;
-
-    constructor(message: string, url: string, isTimeout = false, isAuthError = false) {
-      super(message);
-      this.name = 'GitCloneError';
-      this.url = url;
-      this.isTimeout = isTimeout;
-      this.isAuthError = isAuthError;
-    }
-  }
-
+vi.mock('../src/git.ts', async (importActual) => {
+  const actual = await importActual<typeof import('../src/git.ts')>();
   return {
-    GitCloneError,
+    ...actual,
     cloneRepo: vi.fn(),
     cleanupTempDir: vi.fn().mockResolvedValue(undefined),
   };
