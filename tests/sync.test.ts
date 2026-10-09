@@ -895,6 +895,122 @@ describe('experimental_sync command', () => {
     });
   });
 
+  describe('--recursive', () => {
+    const sync = (...flags: string[]) =>
+      runCli(['experimental_sync', '-y', '-a', 'claude-code', ...flags], testDir);
+    const installed = (name: string) => existsSync(join(testDir, '.agents', 'skills', name));
+    const readLock = () => JSON.parse(readFileSync(join(testDir, 'skills-lock.json'), 'utf-8'));
+
+    function writeJson(path: string, data: Record<string, unknown>): void {
+      mkdirSync(join(path, '..'), { recursive: true });
+      writeFileSync(path, JSON.stringify(data));
+    }
+
+    /** A package at `dir` that ships one skill. */
+    function createSkillPackage(dir: string, name: string, skill: string): void {
+      writeJson(join(dir, 'package.json'), { name, version: '1.0.0' });
+      writeSkill(join(dir, 'skills', skill), skill);
+    }
+
+    it('reads the dependencies of npm workspace packages (hoisted)', () => {
+      writeJson(join(testDir, 'package.json'), { name: 'root', workspaces: ['packages/*'] });
+      writeJson(join(testDir, 'packages', 'app', 'package.json'), {
+        name: '@acme/app',
+        dependencies: { 'lib-a': '*' },
+      });
+      createSkillPackage(join(testDir, 'node_modules', 'lib-a'), 'lib-a', 'skill-a');
+
+      sync();
+      expect(installed('skill-a')).toBe(false);
+
+      sync('--recursive');
+      expect(installed('skill-a')).toBe(true);
+    });
+
+    it('reads pnpm workspace packages and their own node_modules', () => {
+      writeJson(join(testDir, 'package.json'), { name: 'root' });
+      writeFileSync(
+        join(testDir, 'pnpm-workspace.yaml'),
+        "packages:\n  - 'apps/*'\n  - '!apps/legacy'\n"
+      );
+      writeJson(join(testDir, 'apps', 'web', 'package.json'), {
+        name: 'web',
+        dependencies: { 'lib-b': '*' },
+      });
+      createSkillPackage(join(testDir, 'apps', 'web', 'node_modules', 'lib-b'), 'lib-b', 'skill-b');
+      writeJson(join(testDir, 'apps', 'legacy', 'package.json'), {
+        name: 'legacy',
+        dependencies: { 'lib-c': '*' },
+      });
+      createSkillPackage(
+        join(testDir, 'apps', 'legacy', 'node_modules', 'lib-c'),
+        'lib-c',
+        'skill-c'
+      );
+
+      sync('-r');
+
+      expect(installed('skill-b')).toBe(true);
+      expect(installed('skill-c')).toBe(false);
+    });
+
+    it('prefers a root dependency over a workspace dependency with the same skill', () => {
+      writeJson(join(testDir, 'package.json'), {
+        name: 'root',
+        workspaces: ['packages/*'],
+        dependencies: { 'root-lib': '*' },
+      });
+      createSkillPackage(join(testDir, 'node_modules', 'root-lib'), 'root-lib', 'shared');
+      writeJson(join(testDir, 'packages', 'app', 'package.json'), {
+        name: 'app',
+        dependencies: { 'app-lib': '*' },
+      });
+      createSkillPackage(
+        join(testDir, 'packages', 'app', 'node_modules', 'app-lib'),
+        'app-lib',
+        'shared'
+      );
+
+      const result = sync('-r');
+
+      expect(result.stdout).toContain('closer to the project');
+      expect(readLock().skills.shared.source).toBe('root-lib');
+    });
+
+    it('installs neither when two workspaces ship different copies of a skill', () => {
+      writeJson(join(testDir, 'package.json'), { name: 'root', workspaces: ['packages/*'] });
+      for (const app of ['one', 'two']) {
+        writeJson(join(testDir, 'packages', app, 'package.json'), {
+          name: app,
+          dependencies: { 'shared-lib': '*' },
+        });
+        createSkillPackage(
+          join(testDir, 'packages', app, 'node_modules', 'shared-lib'),
+          'shared-lib',
+          'shared'
+        );
+      }
+
+      const result = sync('-r');
+
+      expect(result.stdout).toContain('--exclude shared-lib#shared');
+      expect(installed('shared')).toBe(false);
+    });
+
+    it('reads the skills field of a workspace package', () => {
+      writeJson(join(testDir, 'package.json'), { name: 'root', workspaces: ['packages/*'] });
+      writeJson(join(testDir, 'packages', 'app', 'package.json'), {
+        name: 'app',
+        skills: ['npm:far-lib'],
+      });
+      createSkillPackage(join(testDir, 'node_modules', 'far-lib'), 'far-lib', 'far');
+
+      sync('-r');
+
+      expect(readLock().skills.far).toMatchObject({ source: 'far-lib', via: 'app' });
+    });
+  });
+
   describe('CLI routing', () => {
     it('shows experimental_sync in help output', () => {
       const result = runCli(['--help']);

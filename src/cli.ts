@@ -166,6 +166,7 @@ ${BOLD}Experimental Sync Options:${RESET}
   --dry-run              Show what would change without changing anything
   --no-cleanup           Keep skills whose package no longer ships them
   --no-remote            Skip git sources listed in package.json skills fields
+  -r, --recursive        Also sync the dependencies of each workspace package
   --include <patterns>   Only sync matching packages (<pkg>) or skills (<pkg>#<skill>)
   --exclude <patterns>   Skip matching packages (<pkg>) or skills (<pkg>#<skill>)
 

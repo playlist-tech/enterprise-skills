@@ -1,8 +1,9 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync } from 'fs';
-import { lstat, readdir, readFile, readlink, realpath, rm } from 'fs/promises';
-import { basename, dirname, join, posix, resolve, sep } from 'path';
+import { glob, lstat, readdir, readFile, readlink, realpath, rm } from 'fs/promises';
+import { basename, dirname, join, posix, relative, resolve, sep } from 'path';
+import { parse as parseYaml } from 'yaml';
 import { homedir } from 'os';
 import { hasSkillMd, parseSkillMd } from './skills.ts';
 import {
@@ -47,6 +48,7 @@ export interface SyncOptions {
   include?: string[];
   exclude?: string[];
   remote?: boolean;
+  recursive?: boolean;
 }
 
 /**
@@ -91,7 +93,9 @@ interface PackageSkill extends Skill {
 }
 
 interface PackageJson {
+  name?: string;
   version?: string;
+  workspaces?: string[] | { packages?: string[] };
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -176,7 +180,37 @@ const DEPENDENCY_FIELDS = [
  * reaches the agent only when a direct dependency names it, and the package
  * manager's version resolution decides which copy of a package is seen.
  */
-async function discoverNodeModuleSkills(cwd: string): Promise<{
+/** Directories of the workspace packages declared in pnpm-workspace.yaml or package.json. */
+async function findWorkspacePackages(cwd: string, pkg: PackageJson): Promise<string[]> {
+  const patterns = [
+    ...(Array.isArray(pkg.workspaces) ? pkg.workspaces : (pkg.workspaces?.packages ?? [])),
+  ];
+  try {
+    const pnpm: unknown = parseYaml(await readFile(join(cwd, 'pnpm-workspace.yaml'), 'utf-8'));
+    if (pnpm && typeof pnpm === 'object' && 'packages' in pnpm && Array.isArray(pnpm.packages)) {
+      patterns.push(...pnpm.packages.filter((p) => typeof p === 'string'));
+    }
+  } catch {
+    // no pnpm workspace
+  }
+
+  const negated = patterns.filter((p) => p.startsWith('!')).map((p) => p.slice(1));
+  const included = patterns.filter((p) => !p.startsWith('!'));
+  const dirs = new Set<string>();
+  for await (const file of glob(
+    included.map((p) => posix.join(p, 'package.json')),
+    { cwd, exclude: (path) => basename(path) === 'node_modules' }
+  )) {
+    const dir = dirname(file).split(sep).join('/');
+    if (dir !== '.' && !negated.some((n) => posix.matchesGlob(dir, n))) dirs.add(join(cwd, dir));
+  }
+  return [...dirs].sort();
+}
+
+async function discoverNodeModuleSkills(
+  cwd: string,
+  recursive: boolean
+): Promise<{
   skills: PackageSkill[];
   remote: FieldRemoteRequest[];
   warnings: string[];
@@ -200,17 +234,33 @@ async function discoverNodeModuleSkills(cwd: string): Promise<{
     }
   };
 
-  const deps = [...new Set(DEPENDENCY_FIELDS.flatMap((field) => Object.keys(pkg[field] ?? {})))];
-  const shipped = await Promise.all(
-    deps.map((name) => discoverPackageSkills(join(cwd, 'node_modules', name), name, 0))
-  );
-  await add(shipped.flat());
+  // the project, then with --recursive each workspace package, one level further away
+  const projects = [{ name: '.', dir: cwd, pkg, depth: 0 }];
+  for (const dir of recursive ? await findWorkspacePackages(cwd, pkg) : []) {
+    const workspacePkg = await readPackageJson(dir);
+    const name = workspacePkg?.name ?? relative(cwd, dir).split(sep).join('/');
+    if (workspacePkg) projects.push({ name, dir, pkg: workspacePkg, depth: 1 });
+  }
 
   // `depth` is what this declarer's npm: targets get
-  const declarers = [
-    { name: '.', dir: cwd, depth: 0 },
-    ...deps.map((name) => ({ name, dir: join(cwd, 'node_modules', name), depth: 1 })),
-  ];
+  const declarers: Array<{ name: string; dir: string; depth: number }> = [];
+  for (const project of projects) {
+    const deps = new Set(
+      DEPENDENCY_FIELDS.flatMap((field) => Object.keys(project.pkg[field] ?? {}))
+    );
+    const installed = [...deps].flatMap((name) => {
+      const dir = findInstalledPackage(project.dir, name);
+      return dir ? [{ name, dir }] : [];
+    });
+    const shipped = await Promise.all(
+      installed.map(({ name, dir }) => discoverPackageSkills(dir, name, project.depth))
+    );
+    await add(shipped.flat());
+    declarers.push(
+      { name: project.name, dir: project.dir, depth: project.depth },
+      ...installed.map(({ name, dir }) => ({ name, dir, depth: project.depth + 1 }))
+    );
+  }
   const visited = new Set<string>();
   for (const declarer of declarers) {
     const dir = await realpath(declarer.dir).catch(() => null);
@@ -533,7 +583,7 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
 
   // 1. Discover skills from node_modules
   spinner.start('Scanning node_modules for skills…');
-  const discovery = await discoverNodeModuleSkills(cwd);
+  const discovery = await discoverNodeModuleSkills(cwd, options.recursive ?? false);
   if (discovery.errors.length > 0) {
     spinner.stop(pc.red('Invalid skills field'));
     for (const error of discovery.errors) p.log.error(error);
@@ -862,6 +912,8 @@ export function parseSyncOptions(args: string[]): { options: SyncOptions } {
       options.cleanup = false;
     } else if (arg === '--no-remote') {
       options.remote = false;
+    } else if (arg === '-r' || arg === '--recursive') {
+      options.recursive = true;
     } else if (arg === '-a' || arg === '--agent') {
       options.agent = [...(options.agent ?? []), ...takeValues()];
     } else if (arg === '--include') {
