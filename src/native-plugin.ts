@@ -79,7 +79,7 @@ const AGENT_TYPE_TO_RECIPE: Record<string, string> = {
   'claude-code': 'claude',
   codex: 'codex',
   cursor: 'cursor',
-  'github-copilot': 'copilot',
+  'github-copilot': 'github-copilot',
 };
 
 /** Compact component badge, e.g. "3 skills · 1 MCP · 2 hooks". */
@@ -271,10 +271,13 @@ async function runPluginInstall(args: string[]): Promise<void> {
   }
 
   if (!agent) {
+    const agents = (await fetchAvailableAgents(name)) ?? [
+      ...new Set(Object.values(AGENT_TYPE_TO_RECIPE)),
+    ];
     console.error(pc.red('Could not determine the target agent.'));
     console.error(
       pc.dim(
-        `Pass one explicitly: ${envConfig.cliName} plugin install ${name} --agent <claude|codex>`
+        `Pass one explicitly: ${envConfig.cliName} plugin install ${name} --agent <${agents.join('|')}>`
       )
     );
     process.exit(1);
