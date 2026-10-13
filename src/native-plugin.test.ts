@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runCli } from './test-utils.ts';
 import { componentBadges, runPlugin } from './native-plugin.ts';
+import * as detectAgentModule from './detect-agent.ts';
 
 // The subprocess CLI tests shell out to `node cli.ts`; ensure TypeScript is
 // stripped regardless of the local Node version.
@@ -183,6 +184,66 @@ describe('plugin install (v1 shows steps, never executes)', () => {
     );
     // The warning lands before the first install step.
     expect(output.indexOf('Community plugin')).toBeLessThan(output.indexOf('Clone the plugin'));
+  });
+});
+
+describe('plugin install without a target agent', () => {
+  let errors: string[];
+
+  beforeEach(() => {
+    errors = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(' '));
+    });
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`);
+    }) as typeof process.exit);
+    vi.spyOn(detectAgentModule, 'detectAgent').mockResolvedValue({ isAgent: false } as Awaited<
+      ReturnType<typeof detectAgentModule.detectAgent>
+    >);
+    vi.spyOn(detectAgentModule, 'isRunningInAgent').mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("lists the plugin's available agents in the --agent hint", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 400,
+            json: async () => ({
+              availableAgents: ['claude', 'codex', 'github-copilot', 'cursor', 'antigravity'],
+            }),
+          }) as Response
+      )
+    );
+
+    await expect(runPlugin(['install', 'developer-experience'])).rejects.toThrow('exit 1');
+
+    expect(errors.join('\n')).toContain(
+      'plugin install developer-experience --agent <claude|codex|github-copilot|cursor|antigravity>'
+    );
+  });
+
+  it('falls back to the agents the CLI maps when the catalog is unreachable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      })
+    );
+
+    await expect(runPlugin(['install', 'developer-experience'])).rejects.toThrow('exit 1');
+
+    expect(errors.join('\n')).toContain(
+      'plugin install developer-experience --agent <claude|codex|cursor|github-copilot>'
+    );
   });
 });
 
