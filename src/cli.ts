@@ -93,7 +93,7 @@ function showBanner(): void {
     `  ${DIM}$${RESET} ${TEXT}npx skills init ${DIM}[name]${RESET}          ${DIM}Create a new skill${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills experimental_sync${RESET}    ${DIM}Sync skills from node_modules${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx skills sync${RESET}                 ${DIM}Sync skills from node_modules${RESET}`
   );
   console.log();
   console.log(`${DIM}try:${RESET} npx skills add vercel-labs/agent-skills`);
@@ -132,7 +132,7 @@ ${BOLD}Update Options:${RESET}
 ${BOLD}Project:${RESET}
   experimental_install Restore skills from skills-lock.json
   init [name]          Initialize a skill (creates <name>/SKILL.md or ./SKILL.md)
-  experimental_sync    Sync skills from node_modules into agent directories
+  sync                 Sync skills from node_modules into agent directories (alias: experimental_sync)
 
 ${BOLD}Add Options:${RESET}
   -g, --global           Install skill globally (user-level) instead of project-level
@@ -159,7 +159,7 @@ ${BOLD}Remove Options:${RESET}
   -y, --yes              Skip confirmation prompts
   --all                  Remove every installed skill (-y implied). Do not combine with named skills.
   
-${BOLD}Experimental Sync Options:${RESET}
+${BOLD}Sync Options:${RESET}
   -a, --agent <agents>   Specify agents to install to (use '*' for all agents)
   -y, --yes              Skip confirmation prompts
   --copy                 Copy skills instead of linking them to node_modules
@@ -202,8 +202,8 @@ ${BOLD}Examples:${RESET}
   ${DIM}$${RESET} skills update -g                    ${DIM}# update global skills only${RESET}
   ${DIM}$${RESET} skills experimental_install            ${DIM}# restore from skills-lock.json${RESET}
   ${DIM}$${RESET} skills init my-skill
-  ${DIM}$${RESET} skills experimental_sync              ${DIM}# sync from node_modules${RESET}
-  ${DIM}$${RESET} skills experimental_sync -y           ${DIM}# sync without prompts${RESET}
+  ${DIM}$${RESET} skills sync                            ${DIM}# sync from node_modules${RESET}
+  ${DIM}$${RESET} skills sync -y                         ${DIM}# sync without prompts${RESET}
 
 Discover more skills at ${TEXT}https://skills.sh/${RESET}
 `);
@@ -392,6 +392,7 @@ async function main(): Promise<void> {
       await removeCommand(skills, removeOptions);
       break;
     }
+    case 'sync':
     case 'experimental_sync': {
       if (!inAgent) showLogo();
       const { options: syncOptions } = parseSyncOptions(restArgs);

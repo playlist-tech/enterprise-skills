@@ -15,7 +15,7 @@ import { parseSource } from './source-parser.ts';
  * Only installs to .agents/skills/ (universal agents) -- the canonical
  * project-level location. Does not install to agent-specific directories.
  *
- * node_modules skills are handled via experimental_sync.
+ * node_modules skills are handled via sync.
  */
 export async function runInstallFromLock(args: string[]): Promise<void> {
   const cwd = process.cwd();

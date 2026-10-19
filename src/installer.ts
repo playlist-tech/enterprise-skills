@@ -380,7 +380,8 @@ export async function installSkillForAgent(
       };
     }
 
-    if (pathsOverlap(skill.path, canonicalDir)) {
+    const sourceIsCanonical = resolve(skill.path) === resolve(canonicalDir);
+    if (!sourceIsCanonical && pathsOverlap(skill.path, canonicalDir)) {
       return {
         success: true,
         path: canonicalDir,
@@ -390,16 +391,19 @@ export async function installSkillForAgent(
       };
     }
 
-    if (installMode === 'link') {
-      // Link mode: the canonical dir itself points at the source, nothing is copied.
-      if (!(await createSymlink(skill.path, canonicalDir))) {
+    // Reuse an existing canonical copy when only adding another agent's link.
+    if (!sourceIsCanonical) {
+      if (installMode === 'link') {
+        // Link mode: the canonical dir itself points at the source, nothing is copied.
+        if (!(await createSymlink(skill.path, canonicalDir))) {
+          await cleanAndCreateDirectory(canonicalDir);
+          await copyDirectory(skill.path, canonicalDir, agentType);
+        }
+      } else {
+        // Symlink mode: copy to canonical location and symlink to agent location
         await cleanAndCreateDirectory(canonicalDir);
         await copyDirectory(skill.path, canonicalDir, agentType);
       }
-    } else {
-      // Symlink mode: copy to canonical location and symlink to agent location
-      await cleanAndCreateDirectory(canonicalDir);
-      await copyDirectory(skill.path, canonicalDir, agentType);
     }
 
     // For universal agents with global install, the skill is already in the canonical

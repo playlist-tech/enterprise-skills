@@ -14,12 +14,12 @@ This file provides guidance to AI coding agents working on the `skills` CLI code
 | `skills add <pkg>`            | Install skills from git repos, URLs, or local paths |
 | `skills use <pkg>@<skill>`    | Use one skill without installing                    |
 | `skills experimental_install` | Restore skills from skills-lock.json                |
-| `skills experimental_sync`    | Sync skills from node_modules into agent dirs       |
+| `skills sync`                 | Sync skills from node_modules into agent dirs       |
 | `skills list`                 | List installed skills (alias: `ls`)                 |
 | `skills update [skills...]`   | Update skills to latest versions                    |
 | `skills init [name]`          | Create a new SKILL.md template                      |
 
-Aliases: `skills a` works for `add`. `skills i`, `skills install` (no args) restore from `skills-lock.json`. `skills ls` works for `list`. `skills experimental_install` restores from `skills-lock.json`. `skills experimental_sync` crawls `node_modules` for skills.
+Aliases: `skills a` works for `add`. `skills i`, `skills install` (no args) restore from `skills-lock.json`. `skills ls` works for `list`. `skills experimental_install` restores from `skills-lock.json`. `skills sync` reads skills from npm dependencies (alias: `experimental_sync`).
 
 ## Architecture
 
@@ -97,7 +97,7 @@ If reading an older lock file version, it's wiped. Users must reinstall skills t
 | Feature                    | Implementation                                                |
 | -------------------------- | ------------------------------------------------------------- |
 | `skills add`               | `src/add.ts` - full implementation                            |
-| `skills experimental_sync` | `src/sync.ts` - crawl node_modules                            |
+| `skills sync`              | `src/sync.ts` - crawl node_modules                            |
 | `skills check`             | `src/cli.ts` + `fetchSkillFolderHash` in `src/skill-lock.ts`  |
 | `skills update`            | `src/cli.ts` direct hash compare + reinstall via `skills add` |
 
@@ -121,7 +121,7 @@ pnpm build
 
 # Test locally
 pnpm dev add vercel-labs/agent-skills --list
-pnpm dev experimental_sync
+pnpm dev sync
 pnpm dev check
 pnpm dev update
 pnpm dev init my-skill
@@ -175,4 +175,4 @@ npm publish
 
 1. Add the agent definition to `src/agents.ts`
 2. Run `pnpm run -C scripts validate-agents.ts` to validate
-3. Run `pnpm run -C scripts sync-agents.ts` to update README.md and package keywords
+3. Run `pnpm run -C scripts sync-agents.ts` to update README.md, generated docs, and package keywords
