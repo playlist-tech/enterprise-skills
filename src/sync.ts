@@ -630,7 +630,7 @@ export async function runSync(args: string[], options: SyncOptions = {}): Promis
 
   console.log();
   if (!agentResult.isAgent) {
-    p.intro(pc.bgCyan(pc.black(' skills sync ')));
+    p.intro(pc.bgCyan(pc.black(' skills experimental_sync ')));
   }
 
   if (agentResult.isAgent) {

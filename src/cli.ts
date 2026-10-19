@@ -93,7 +93,7 @@ function showBanner(): void {
     `  ${DIM}$${RESET} ${TEXT}npx skills init ${DIM}[name]${RESET}          ${DIM}Create a new skill${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills sync${RESET}                 ${DIM}Sync skills from node_modules${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx skills experimental_sync${RESET}    ${DIM}Sync skills from node_modules${RESET}`
   );
   console.log();
   console.log(`${DIM}try:${RESET} npx skills add vercel-labs/agent-skills`);
@@ -126,8 +126,8 @@ function showHelp(): void {
     ['skills update -g', 'update global skills only'],
     ['skills experimental_install', 'restore from skills-lock.json'],
     ['skills init my-skill'],
-    ['skills sync', 'sync from node_modules'],
-    ['skills sync -y', 'sync without prompts'],
+    ['skills experimental_sync', 'sync from node_modules (experimental)'],
+    ['skills experimental_sync -y', 'sync without prompts'],
   ];
   const exampleWidth = Math.max(
     ...examples.filter(([, description]) => description).map(([command]) => command.length)
@@ -169,7 +169,7 @@ ${BOLD}Update Options:${RESET}
 ${BOLD}Project:${RESET}
   experimental_install Restore skills from skills-lock.json
   init [name]          Initialize a skill (creates <name>/SKILL.md or ./SKILL.md)
-  sync                 Sync skills from node_modules into agent directories (alias: experimental_sync)
+  experimental_sync    Sync skills from node_modules into agent directories (alias: sync)
 
 ${BOLD}Add Options:${RESET}
   -g, --global           Install skill globally (user-level) instead of project-level
@@ -196,7 +196,7 @@ ${BOLD}Remove Options:${RESET}
   -y, --yes              Skip confirmation prompts
   --all                  Remove every installed skill (-y implied). Do not combine with named skills.
   
-${BOLD}Sync Options:${RESET}
+${BOLD}Experimental Sync Options:${RESET}
   -a, --agent <agents>   Specify agents to install to (use '*' for all agents)
   -y, --yes              Skip confirmation prompts
   --copy                 Copy skills instead of linking them to node_modules

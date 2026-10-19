@@ -252,16 +252,22 @@ npx skills rm my-skill
 | `-y, --yes`    | Skip confirmation prompts                        |
 | `--all`        | Shorthand for `--skill '*' --agent '*' -y`       |
 
-## `skills sync`
+## Experimental commands
 
-Sync skills from npm packages and `package.json` declarations. `experimental_sync`
-remains supported as an alias.
+These commands are still experimental. Their names, options, and behavior may change.
+
+<a id="skills-sync"></a>
+
+### `skills experimental_sync`
+
+Sync skills from npm packages and `package.json` declarations. `sync` remains
+supported as a compatibility alias for users of skills@1.7.3.
 
 Install a package that ships skills, then sync them into your project:
 
 ```bash
 npm install -D skills agent-browser
-npx skills sync -y
+npx skills experimental_sync -y
 ```
 
 Sync reads installed dependencies declared in your project's `package.json`, including
@@ -275,7 +281,7 @@ The `.agents/skills/` directory is the shared location. Selecting Claude Code al
 creates links under `.claude/skills/` pointing to the shared skills:
 
 ```bash
-npx skills sync -a claude-code -y
+npx skills experimental_sync -a claude-code -y
 ```
 
 Outside an agent, sync detects installed agents. When run inside a coding agent,
@@ -289,7 +295,7 @@ To run sync after dependency installation, add a `prepare` script:
 ```json
 {
   "scripts": {
-    "prepare": "skills sync -y"
+    "prepare": "skills experimental_sync -y"
   }
 }
 ```
@@ -326,10 +332,6 @@ provided, and preserves skills installed separately with `skills add`.
 The include/exclude filters apply to both packaged and remote skills. For remote
 skills, the package pattern matches the package declaring the entry (`.` for the
 project's own field). Eve always receives copies because it rewrites skill frontmatter.
-
-## Experimental commands
-
-These commands are still experimental. Their names, options, and behavior may change.
 
 ### Restore skills from the project lock file
 
