@@ -425,6 +425,8 @@ async function main(): Promise<void> {
       await runList(restArgs);
       break;
     case 'check':
+      await runUpdate(restArgs, 'check');
+      break;
     case 'update':
     case 'upgrade':
       await runUpdate(restArgs);

@@ -171,6 +171,8 @@ Check installed skills for available updates without reinstalling them:
 npx skills check
 ```
 
+It exits with code 1 when any skill has an update, so it can gate CI.
+
 ## `skills update`
 
 ```bash
@@ -316,6 +318,15 @@ and [RFC](https://github.com/vercel-labs/skills/issues/2323) for the full propos
 
 Sync tracks its skills in `skills-lock.json`, removes skills that are no longer
 provided, and preserves skills installed separately with `skills add`.
+
+When two skills share a name, sync applies these rules in order:
+
+1. A skill installed with `skills add` is never shadowed, and a directory or link
+   that sync did not create is never replaced.
+2. A skill shipped by a direct dependency beats one from a transitive package, and a
+   shipped skill beats one requested from a Git source.
+3. Two packages at the same level shipping the same skill name install neither.
+   Pick one with `--exclude <package>#<skill>`.
 
 | Option                    | Description                                                   |
 | ------------------------- | ------------------------------------------------------------- |
