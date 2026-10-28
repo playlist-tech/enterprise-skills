@@ -4,6 +4,7 @@ import { parseFrontmatter } from './frontmatter.ts';
 import { sanitizeMetadata, stripTerminalEscapes } from './sanitize.ts';
 import type { Skill } from './types.ts';
 import { getPluginSkillPaths, getPluginGroupings } from './plugin-manifest.ts';
+import { getSkillsShSearchDirs } from './skills-sh-config.ts';
 import { InvalidLocalLockError, readLocalLock } from './local-lock.ts';
 import { DEFAULT_SKILL_CONTAINER_DEPTH } from './constants.ts';
 
@@ -272,6 +273,9 @@ export async function discoverSkills(
     join(searchPath, 'skills/.system'),
     ...AGENT_PROJECT_SKILL_DIRS.map((dir) => join(searchPath, dir)),
   ];
+
+  // Add skill container dirs the repo declares in skills.sh.json `paths`
+  prioritySearchDirs.push(...(await getSkillsShSearchDirs(searchPath)));
 
   // Known skill container dirs are walked up to three levels deep so layouts
   // like `skills/<category>/<category>/<skill>/SKILL.md` are discovered without
