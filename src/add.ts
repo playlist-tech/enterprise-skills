@@ -529,6 +529,25 @@ export async function promptForAgents(
 }
 
 /**
+ * Agents picked automatically (detected, or every agent with --yes) that have no
+ * global skills directory are skipped with one notice on a global install,
+ * instead of failing once per skill. Agents named with --agent keep that error,
+ * and so does a selection where no agent supports global installs.
+ */
+export function skipAgentsWithoutGlobalDir(
+  targetAgents: AgentType[],
+  options: { global: boolean; explicit: boolean }
+): AgentType[] {
+  if (!options.global || options.explicit) return targetAgents;
+  const skipped = targetAgents.filter((a) => agents[a].globalSkillsDir === undefined);
+  if (skipped.length === 0 || skipped.length === targetAgents.length) return targetAgents;
+  p.log.info(
+    `Skipping ${skipped.map((a) => agents[a].displayName).join(', ')}: no global skills directory`
+  );
+  return targetAgents.filter((a) => agents[a].globalSkillsDir !== undefined);
+}
+
+/**
  * Interactive agent selection using fuzzy search.
  * Shows universal agents as locked (always selected), and other agents as selectable.
  */
@@ -888,6 +907,11 @@ async function handleWellKnownSkills(
 
     installGlobally = scope as boolean;
   }
+
+  targetAgents = skipAgentsWithoutGlobalDir(targetAgents, {
+    global: installGlobally,
+    explicit: options.agent !== undefined,
+  });
 
   // Surface an unusable lock before touching disk rather than after installing.
   if (!installGlobally) await readLocalLock();
@@ -2203,8 +2227,6 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       }
     }
 
-    const installTargets = buildInstallTargets(targetAgents, eveSubagentTargets);
-
     let installGlobally = options.global ?? false;
 
     // Check if any selected agents support global installation
@@ -2234,6 +2256,12 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
       installGlobally = scope as boolean;
     }
+
+    targetAgents = skipAgentsWithoutGlobalDir(targetAgents, {
+      global: installGlobally,
+      explicit: options.agent !== undefined,
+    });
+    const installTargets = buildInstallTargets(targetAgents, eveSubagentTargets);
 
     // Surface an unusable lock before touching disk rather than after installing.
     if (!installGlobally) await readLocalLock();
