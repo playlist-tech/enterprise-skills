@@ -1306,6 +1306,35 @@ describe('Update Cleanup Unit Tests', () => {
       expect(result.successCount).toBe(1);
     });
 
+    it('reinstalls a copied global skill as a copy', async () => {
+      // Two target dirs, so the default would be a symlink.
+      vi.mocked(add.nonInteractiveTargetAgents).mockResolvedValue(['cursor', 'claude-code']);
+      vi.mocked(skillLock.readSkillLock).mockResolvedValue({
+        version: 3,
+        skills: {
+          'skill-a': {
+            source: 'owner/repo',
+            skillPath: 'skills/skill-a/SKILL.md',
+            sourceType: 'github',
+            skillFolderHash: 'old',
+            installedAt: '',
+            updatedAt: '',
+            installMode: 'copy',
+          },
+        },
+      });
+      vi.mocked(blob.fetchRepoTree).mockResolvedValue({
+        sha: 'rootsha',
+        branch: 'main',
+        tree: [{ path: 'skills/skill-a/SKILL.md', type: 'blob', sha: 'sha1' }],
+      });
+      vi.mocked(blob.getSkillFolderHashFromTree).mockReturnValue('new');
+
+      await updateGlobalSkills({ yes: true });
+
+      expect(vi.mocked(add.installFetched).mock.calls[0]![1].placement.mode).toBe('copy');
+    });
+
     it('fetches every global update before installing any', async () => {
       vi.mocked(skillLock.readSkillLock).mockResolvedValue({
         version: 3,

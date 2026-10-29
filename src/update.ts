@@ -67,12 +67,14 @@ function printFetching(sourceCount: number): void {
 
 /**
  * Where a reinstalled skill goes: what `add -y` would pick, with Eve fanned
- * out over the subagents recorded at install time (`''` is the root agent).
- * Agent detection runs once per resolver.
+ * out over the subagents recorded at install time (`''` is the root agent)
+ * and the install mode the user chose. Agent detection runs once per resolver.
  */
-function placementResolver(global: boolean): (subagents?: string[]) => Promise<InstallPlacement> {
+function placementResolver(
+  global: boolean
+): (subagents?: string[], installMode?: 'copy') => Promise<InstallPlacement> {
   let agentsPromise: Promise<AgentType[]> | undefined;
-  return async (subagents) => {
+  return async (subagents, installMode) => {
     agentsPromise ??= nonInteractiveTargetAgents();
     let targetAgents = await agentsPromise;
     const hasSubagents = !!subagents?.length;
@@ -84,7 +86,7 @@ function placementResolver(global: boolean): (subagents?: string[]) => Promise<I
     return {
       global,
       targets,
-      mode: defaultInstallMode(targets),
+      mode: installMode ?? defaultInstallMode(targets),
       createMissingAgentRoot: (agent) => hasSubagents && agent === 'eve',
     };
   };
@@ -836,7 +838,7 @@ export async function updateGlobalSkills(
     const source = fetched[index]!;
     const outcome = await installFetched(source, {
       skills: [name],
-      placement: await placementFor(),
+      placement: await placementFor(undefined, entry.installMode),
     });
     await releaseSource(source);
     if (outcome.installed.length > 0) {
@@ -1038,7 +1040,7 @@ export async function updateProjectSkills(
         const results = await installToTargets(
           resolved,
           [current],
-          await placementFor(skill.entry.subagents)
+          await placementFor(skill.entry.subagents, skill.entry.installMode)
         );
         const outcome = targetOutcome(results);
         if (outcome.ok && computedHash) {

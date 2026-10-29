@@ -173,8 +173,10 @@ ${BOLD}Project:${RESET}
   experimental_sync    Sync skills from node_modules into agent directories (alias: sync)
 
 ${BOLD}Experimental Install Options:${RESET}
+  --dry-run              Show what would be restored without installing anything
   --frozen-lockfile      Fail instead of changing skills-lock.json (default in CI)
   --no-frozen-lockfile   Allow skills-lock.json to change in CI
+  --force                Reinstall skills that are already installed
 
 ${BOLD}Add Options:${RESET}
   -g, --global           Install skill globally (user-level) instead of project-level

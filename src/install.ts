@@ -1,3 +1,5 @@
+import { existsSync } from 'fs';
+import { join } from 'path';
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { readLocalLock } from './local-lock.ts';
@@ -7,9 +9,11 @@ import { getUniversalAgents } from './agents.ts';
 import { buildLocalUpdateSource } from './update-source.ts';
 import { parseSource } from './source-parser.ts';
 import { isCI } from './ci.ts';
+import { getCanonicalPath } from './installer.ts';
 
 /**
- * Install all skills from the local skills-lock.json.
+ * Install the skills from the local skills-lock.json that are not already in
+ * .agents/skills/ (all of them with --force).
  * Groups skills by source and installs each group; a failing source does not
  * stop the others.
  *
@@ -22,6 +26,7 @@ export async function runInstallFromLock(args: string[]): Promise<void> {
   const cwd = process.cwd();
   const { options: syncOptions } = parseSyncOptions(args);
   const frozen = syncOptions.frozenLockfile ?? isCI();
+  const force = args.includes('--force');
   const lock = await readLocalLock(cwd);
   const skillEntries = Object.entries(lock.skills);
 
@@ -45,11 +50,17 @@ export async function runInstallFromLock(args: string[]): Promise<void> {
 
   // Separate node_modules skills from remote skills
   const nodeModuleSkills: string[] = [];
+  const alreadyInstalled: string[] = [];
   const bySource = new Map<string, string[]>();
 
   for (const [skillName, entry] of skillEntries) {
     if (entry.sourceType === 'node_modules') {
       nodeModuleSkills.push(skillName);
+      continue;
+    }
+
+    if (!force && existsSync(join(getCanonicalPath(skillName, { cwd }), 'SKILL.md'))) {
+      alreadyInstalled.push(skillName);
       continue;
     }
 
@@ -63,11 +74,26 @@ export async function runInstallFromLock(args: string[]): Promise<void> {
     bySource.set(installSource, [...(bySource.get(installSource) ?? []), skillName]);
   }
 
-  const remoteCount = skillEntries.length - nodeModuleSkills.length;
+  if (alreadyInstalled.length > 0) {
+    p.log.info(
+      `${pc.cyan(String(alreadyInstalled.length))} skill${alreadyInstalled.length !== 1 ? 's' : ''} already installed ${pc.dim('(use --force to reinstall)')}`
+    );
+  }
+
+  const remoteCount = skillEntries.length - nodeModuleSkills.length - alreadyInstalled.length;
   if (remoteCount > 0) {
     p.log.info(
-      `Restoring ${pc.cyan(String(remoteCount))} skill${remoteCount !== 1 ? 's' : ''} from skills-lock.json into ${pc.dim('.agents/skills/')}`
+      `${syncOptions.dryRun ? 'Would restore' : 'Restoring'} ${pc.cyan(String(remoteCount))} skill${remoteCount !== 1 ? 's' : ''} from skills-lock.json into ${pc.dim('.agents/skills/')}`
     );
+  }
+  if (syncOptions.dryRun) {
+    for (const [source, skills] of bySource) {
+      p.log.message(
+        `${skills.map((name) => pc.cyan(name)).join(', ')} ${pc.dim(`from ${source}`)}`
+      );
+    }
+    // Nothing is fetched or installed; node_modules entries below are reported by sync's own dry run.
+    bySource.clear();
   }
 
   // Download every source at once, then install them in order
