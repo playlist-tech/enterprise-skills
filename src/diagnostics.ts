@@ -1,6 +1,6 @@
 import { defineDiagnostics, Diagnostic } from 'nostics';
 import { ansiFormatter } from 'nostics/formatters/ansi';
-import pc from 'picocolors';
+import { pc } from './color.ts';
 
 // An empty fix is omitted from the output.
 const availableSkills = (names: string[]) =>
@@ -62,6 +62,11 @@ export const diagnostics = defineDiagnostics({
       why: (p: { skills: string[] }) => `Tracked in the global lock: ${p.skills.join(', ')}`,
       fix: (p: { skills: string[] }) =>
         `Remove globally with: skills remove ${p.skills.join(' ')} -g`,
+    },
+    SKILLS_REMOVE_UNTRACKED_SKIPPED: {
+      why: (p: { skills: string[] }) =>
+        `Skipped ${p.skills.length} untracked skill(s) not recorded in the lock file: ${p.skills.join(', ')}`,
+      fix: 'Remove them by name, e.g. skills remove <name>',
     },
 
     SKILLS_UNSAFE_SUBPATH: {
