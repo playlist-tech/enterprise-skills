@@ -78,26 +78,63 @@ export function parseOwnerRepo(ownerRepo: string): { owner: string; repo: string
   return null;
 }
 
+/** A GitHub `owner/repo`: the characters GitHub allows, never a `.` or `..` repo. */
+const GITHUB_FULL_NAME = /^[A-Za-z0-9-]+\/(?!\.\.?$)[A-Za-z0-9._-]+$/;
+
+/**
+ * Look up a GitHub.com repository. `fullName` is its canonical `owner/repo`:
+ * GitHub follows renames and transfers. Returns null when the repo does not
+ * exist, is not visible anonymously, or the API is unreachable.
+ */
+export async function fetchGitHubRepoInfo(owner: string, repo: string) {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+    if (!res.ok) {
+      return null;
+    }
+
+    const data = (await res.json()) as { private?: boolean; full_name?: unknown };
+    return {
+      private: data.private === true,
+      fullName:
+        typeof data.full_name === 'string' && GITHUB_FULL_NAME.test(data.full_name)
+          ? data.full_name
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Check if a GitHub repository is private.
  * Returns true if private, false if public, null if unable to determine.
  * Only works for GitHub repositories (GitLab not supported).
  */
 export async function isRepoPrivate(owner: string, repo: string): Promise<boolean | null> {
-  try {
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+  const info = await fetchGitHubRepoInfo(owner, repo);
+  // If repo doesn't exist or we don't have access, we can't tell
+  return info ? info.private : null;
+}
 
-    // If repo doesn't exist or we don't have access, assume private to be safe
-    if (!res.ok) {
-      return null; // Unable to determine
-    }
+/**
+ * Point a GitHub.com source at its canonical `owner/repo`, keeping ref, subpath,
+ * and skill filter. Returns `parsed` itself when there is nothing to change.
+ */
+export function withCanonicalGitHubRepo(
+  parsed: ParsedSource,
+  fullName: string | null | undefined
+): ParsedSource {
+  if (parsed.type !== 'github' || !fullName || getOwnerRepo(parsed) === fullName) return parsed;
+  return { ...parsed, url: `https://github.com/${fullName}.git` };
+}
 
-    const data = (await res.json()) as { private?: boolean };
-    return data.private === true;
-  } catch {
-    // On error, return null to indicate we couldn't determine
-    return null;
-  }
+/** The GitHub API lookup for a `github` source, or null for any other source. */
+export function lookupGitHubRepo(parsed: ParsedSource) {
+  if (parsed.type !== 'github') return Promise.resolve(null);
+  const ownerRepo = parseOwnerRepo(getOwnerRepo(parsed) ?? '');
+  if (!ownerRepo) return Promise.resolve(null);
+  return fetchGitHubRepoInfo(ownerRepo.owner, ownerRepo.repo);
 }
 
 /**

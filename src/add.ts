@@ -3,7 +3,14 @@ import pc from 'picocolors';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { sep, join, dirname, relative, isAbsolute } from 'path';
-import { parseSource, getOwnerRepo, parseOwnerRepo, isRepoPrivate } from './source-parser.ts';
+import {
+  parseSource,
+  getOwnerRepo,
+  parseOwnerRepo,
+  isRepoPrivate,
+  lookupGitHubRepo,
+  withCanonicalGitHubRepo,
+} from './source-parser.ts';
 import { stripTerminalEscapes } from './sanitize.ts';
 import { searchMultiselect } from './prompts/search-multiselect.ts';
 import type { Diagnostic } from 'nostics';
@@ -74,6 +81,7 @@ import {
 } from './blob.ts';
 import { collectSkillsShFiles, computeSkillsShTreeHash } from './skills-sh-hash.ts';
 import packageJson from '../package.json' with { type: 'json' };
+import { parseCliArgs } from './cli-args.ts';
 import {
   downloadNotionUrl,
   isNotionPackUrl,
@@ -2378,7 +2386,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     const spinner = jsonMode ? silentSpinner : p.spinner();
 
     spinner.start('Parsing source…');
-    const parsed = parseSource(effectiveSource);
+    let parsed = parseSource(effectiveSource);
     let directDownload = parsed.type === 'download' || notionSourceLabel !== null;
     spinner.stop(
       notionSourceLabel !== null
@@ -2386,20 +2394,13 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         : `Source: ${parsed.type === 'local' ? parsed.localPath! : parsed.url}${parsed.ref ? ` @ ${pc.yellow(parsed.ref)}` : ''}${parsed.subpath ? ` (${parsed.subpath})` : ''}${parsed.skillFilter ? ` ${pc.dim('@')}${pc.cyan(parsed.skillFilter)}` : ''}`
     );
 
-    // Kick off the repo privacy check early so it runs in parallel with
-    // cloning/discovering/installing. The result is only needed later for
-    // telemetry gating — it should never block user-visible output.
-    const ownerRepoRaw =
-      parsed.type === 'well-known' || parsed.type === 'download' ? null : getOwnerRepo(parsed);
-    const repoPrivacyPromise: Promise<boolean | null> = (() => {
-      // The privacy endpoint below is GitHub.com-specific. In particular, do
-      // not send GitHub Enterprise repository names to the public API.
-      if (parsed.type !== 'github') return Promise.resolve(null);
-      if (!ownerRepoRaw) return Promise.resolve(null);
-      const ownerRepo = parseOwnerRepo(ownerRepoRaw);
-      if (!ownerRepo) return Promise.resolve(null);
-      return isRepoPrivate(ownerRepo.owner, ownerRepo.repo).catch(() => null);
-    })();
+    // Kick off the GitHub repo lookup early so it runs in parallel with
+    // cloning/discovering/installing. It gives privacy (telemetry and audit
+    // gating) and the canonical name after a rename.
+    const repoInfoPromise = lookupGitHubRepo(parsed);
+    const repoPrivacyPromise: Promise<boolean | null> = repoInfoPromise.then((info) =>
+      info ? info.private : null
+    );
 
     // Handle arbitrary URLs by trying well-known discovery first, then
     // falling back to a direct SKILL.md/archive download.
@@ -2465,6 +2466,19 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     if (!blobResult) {
       spinner.stop(`Found ${pc.green(skills.length)} skill${skills.length > 1 ? 's' : ''}`);
+    }
+
+    // A renamed repo still clones under its old name; record the current one
+    // so lock and telemetry do not keep the old name alive.
+    const canonical = withCanonicalGitHubRepo(parsed, (await repoInfoPromise)?.fullName);
+    if (canonical !== parsed) {
+      const from = getOwnerRepo(parsed)!;
+      const to = getOwnerRepo(canonical)!;
+      // A case-only difference is the same repo, not worth a message.
+      if (from.toLowerCase() !== to.toLowerCase()) {
+        p.log.info(`${pc.cyan(from)} has moved to ${pc.cyan(to)}`);
+      }
+      parsed = canonical;
     }
 
     if (options.list) {
@@ -3361,86 +3375,52 @@ async function promptForFindSkills(
   }
 }
 
-// Parse command line options from args array
+const ADD_OPTIONS = {
+  global: { type: 'boolean', short: 'g' },
+  yes: { type: 'boolean', short: 'y' },
+  list: { type: 'boolean', short: 'l' },
+  all: { type: 'boolean' },
+  agent: { type: 'list', short: 'a', value: 'an agent name' },
+  skill: { type: 'list', short: 's', value: 'a skill name' },
+  metadata: { type: 'string', value: 'a JSON value' },
+  'full-depth': { type: 'boolean' },
+  json: { type: 'boolean' },
+  copy: { type: 'boolean' },
+  subagent: { type: 'list', value: 'a subagent name' },
+} as const;
+
+// Parse command line options from args array. Unknown options are ignored:
+// `skills install` passes restore flags (`--force`, `--frozen-lockfile`) through here.
 export function parseAddOptions(args: string[]): {
   source: string[];
   options: AddOptions;
   errors: Diagnostic[];
 } {
-  const options: AddOptions = {};
-  const source: string[] = [];
-  const errors: Diagnostic[] = [];
+  const { values, positionals, errors } = parseCliArgs(args, ADD_OPTIONS);
+  const options: AddOptions = {
+    global: values.global,
+    yes: values.yes,
+    list: values.list,
+    all: values.all,
+    agent: values.agent,
+    skill: values.skill,
+    fullDepth: values['full-depth'],
+    json: values.json,
+    copy: values.copy,
+    subagent: values.subagent,
+  };
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-
-    if (arg === '-g' || arg === '--global') {
-      options.global = true;
-    } else if (arg === '-y' || arg === '--yes') {
-      options.yes = true;
-    } else if (arg === '-l' || arg === '--list') {
-      options.list = true;
-    } else if (arg === '--all') {
-      options.all = true;
-    } else if (arg === '-a' || arg === '--agent') {
-      options.agent = options.agent || [];
-      i++;
-      let nextArg = args[i];
-      while (i < args.length && nextArg && !nextArg.startsWith('-')) {
-        options.agent.push(nextArg);
-        i++;
-        nextArg = args[i];
-      }
-      i--; // Back up one since the loop will increment
-    } else if (arg === '-s' || arg === '--skill') {
-      options.skill = options.skill || [];
-      i++;
-      let nextArg = args[i];
-      while (i < args.length && nextArg && !nextArg.startsWith('-')) {
-        options.skill.push(nextArg);
-        i++;
-        nextArg = args[i];
-      }
-      i--; // Back up one since the loop will increment
-    } else if (arg === '--metadata') {
-      const metadata = args[++i];
-      if (metadata === undefined) {
-        errors.push(
-          diagnostics.SKILLS_OPTION_REQUIRES_VALUE({ option: '--metadata', value: 'a JSON value' })
-        );
-      } else {
-        try {
-          JSON.parse(metadata);
-          options.metadata = metadata;
-        } catch {
-          errors.push(
-            diagnostics.SKILLS_INVALID_OPTION_VALUE({
-              option: '--metadata',
-              expected: 'valid JSON',
-            })
-          );
-        }
-      }
-    } else if (arg === '--full-depth') {
-      options.fullDepth = true;
-    } else if (arg === '--json') {
-      options.json = true;
-    } else if (arg === '--copy') {
-      options.copy = true;
-    } else if (arg === '--subagent') {
-      options.subagent = options.subagent || [];
-      i++;
-      let nextArg = args[i];
-      while (i < args.length && nextArg && !nextArg.startsWith('-')) {
-        options.subagent.push(nextArg);
-        i++;
-        nextArg = args[i];
-      }
-      i--; // Back up one since the loop will increment
-    } else if (arg && !arg.startsWith('-')) {
-      source.push(arg);
+  const metadata = values.metadata?.at(-1);
+  if (metadata !== undefined) {
+    try {
+      JSON.parse(metadata);
+      options.metadata = metadata;
+    } catch {
+      errors.push(
+        diagnostics.SKILLS_INVALID_OPTION_VALUE({ option: '--metadata', expected: 'valid JSON' })
+      );
     }
   }
 
-  return { source, options, errors };
+  return { source: positionals, options, errors };
 }
