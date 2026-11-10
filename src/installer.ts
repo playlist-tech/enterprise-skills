@@ -191,19 +191,23 @@ function resolveSymlinkTarget(linkPath: string, linkTarget: string): string {
 }
 
 /**
- * Throws if `path` is an agent category directory, e.g. Hermes
+ * Names of the nested skills if `path` is an agent category directory, e.g. Hermes
  * `~/.hermes/skills/<category>/<skill>/SKILL.md` (#1723): a real directory with
- * no root SKILL.md and at least one child directory with a SKILL.md. Deleting it
- * would wipe unrelated skills. A skill that bundles child skills has a root
- * SKILL.md, so it can still be replaced. Symlinks are not checked: removing a
- * link leaves its target alone.
+ * no root SKILL.md and at least one child directory with a SKILL.md. Otherwise
+ * `[]`. A skill that bundles child skills has a root SKILL.md, so it is not a
+ * category. Symlinks are not categories: removing a link leaves its target alone.
  */
-async function assertNotCategoryDir(path: string): Promise<void> {
+export async function findCategoryDirSkills(path: string): Promise<string[]> {
   const stats = await lstat(path).catch(() => undefined);
-  if (!stats?.isDirectory() || existsSync(join(path, 'SKILL.md'))) return;
+  if (!stats?.isDirectory() || existsSync(join(path, 'SKILL.md'))) return [];
   const entries = await readdir(path).catch(() => []);
-  const nested = entries.filter((name) => existsSync(join(path, name, 'SKILL.md')));
-  if (nested.length > 0) throw diagnostics.SKILLS_CATEGORY_DIR_CONFLICT({ path, skills: nested });
+  return entries.filter((name) => existsSync(join(path, name, 'SKILL.md')));
+}
+
+/** Throws if `path` is an agent category directory: deleting it would wipe unrelated skills. */
+async function assertNotCategoryDir(path: string): Promise<void> {
+  const skills = await findCategoryDirSkills(path);
+  if (skills.length > 0) throw diagnostics.SKILLS_CATEGORY_DIR_CONFLICT({ path, skills });
 }
 
 /**
@@ -414,6 +418,18 @@ export async function installSkillForAgent(
         skipped: true,
       };
     }
+
+    const linksAgentDir =
+      !(isGlobal && readsCanonicalGlobally(agentType)) &&
+      !shouldSkipProjectAgentSymlink(
+        agentType,
+        isGlobal,
+        cwd,
+        options.createMissingAgentRoot ?? false
+      );
+    // Check every target before writing, so a refusal leaves nothing behind (#1723).
+    if (!sourceIsCanonical) await assertNotCategoryDir(canonicalDir);
+    if (linksAgentDir) await assertNotCategoryDir(agentDir);
 
     // Reuse an existing canonical copy when only adding another agent's link.
     if (!sourceIsCanonical) {
@@ -810,6 +826,9 @@ export async function installRemoteSkillForAgent(
     }
 
     // Symlink mode: write to canonical location and symlink to agent location
+    // Check every target before writing, so a refusal leaves nothing behind (#1723).
+    await assertNotCategoryDir(canonicalDir);
+    if (!(isGlobal && readsCanonicalGlobally(agentType))) await assertNotCategoryDir(agentDir);
     await cleanAndCreateDirectory(canonicalDir);
     const skillFileName =
       agentType === 'eve' ? toEveFlatSkillFileName(skill.installName) : 'SKILL.md';
@@ -972,6 +991,9 @@ export async function installWellKnownSkillForAgent(
     }
 
     // Symlink mode: write to canonical location and symlink to agent location
+    // Check every target before writing, so a refusal leaves nothing behind (#1723).
+    await assertNotCategoryDir(canonicalDir);
+    if (!(isGlobal && readsCanonicalGlobally(agentType))) await assertNotCategoryDir(agentDir);
     await cleanAndCreateDirectory(canonicalDir);
     await writeSkillFiles(canonicalDir);
 
@@ -1125,6 +1147,17 @@ export async function installBlobSkillForAgent(
     }
 
     // Symlink mode
+    const linksAgentDir =
+      !(isGlobal && readsCanonicalGlobally(agentType)) &&
+      !shouldSkipProjectAgentSymlink(
+        agentType,
+        isGlobal,
+        cwd,
+        options.createMissingAgentRoot ?? false
+      );
+    // Check every target before writing, so a refusal leaves nothing behind (#1723).
+    await assertNotCategoryDir(canonicalDir);
+    if (linksAgentDir) await assertNotCategoryDir(agentDir);
     await cleanAndCreateDirectory(canonicalDir);
     await writeSkillFiles(canonicalDir);
 
